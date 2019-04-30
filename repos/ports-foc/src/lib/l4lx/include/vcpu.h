@@ -24,6 +24,8 @@
 #include <timer_session/connection.h>
 #include <foc/native_thread.h>
 
+#include "genode_env.h"
+
 namespace Fiasco {
 #include <l4/sys/utcb.h>
 }
@@ -40,16 +42,18 @@ namespace L4lx {
 			enum { WEIGHT = Genode::Cpu_session::Weight::DEFAULT_WEIGHT };
 
 			Genode::Lock                _lock;
+			Genode::Env                 &_env;
 			L4_CV void                (*_func)(void *data);
 			unsigned long               _data;
 			Genode::addr_t              _vcpu_state;
-			Timer::Connection           _timer;
+			Timer::Connection           _timer { _env };
 			unsigned                    _cpu_nr;
 			Fiasco::l4_utcb_t   * const _utcb;
 
 		public:
 
-			Vcpu(const char                 *str,
+			Vcpu(Genode::Env                &env,
+			     const char                 *str,
 			     L4_CV void                (*func)(void *data),
 			     unsigned long              *data,
 			     Genode::size_t              stack_size,
@@ -58,11 +62,13 @@ namespace L4lx {
 			: Genode::Thread(WEIGHT, str, stack_size,
 			                 Genode::Affinity::Location(cpu_nr, 0)),
 			  _lock(Genode::Cancelable_lock::LOCKED),
+			  _env(env),
 			  _func(func),
 			  _data(data ? *data : 0),
 			  _vcpu_state(vcpu_state),
 			  _cpu_nr(cpu_nr),
-			  _utcb((Fiasco::l4_utcb_t *)Genode::Cpu_thread_client(cap()).state().utcb)
+			  _utcb((Fiasco::l4_utcb_t *)_env.rm().attach(Genode::Cpu_thread_client(cap()).utcb()))
+			  //_utcb((Fiasco::l4_utcb_t *)Genode::Cpu_thread_client(cap()).state().utcb)
 			{
 				start();
 

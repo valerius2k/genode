@@ -13,11 +13,15 @@
 
 /* Genode includes */
 #include <base/env.h>
-#include <base/printf.h>
-#include <dataspace/client.h>
+#include <base/log.h>
+//#include <base/printf.h>
+#include <base/quota_guard.h>
+//#include <dataspace/client.h>
 
 /* L4lx library includes */
 #include <env.h>
+
+#include "genode_env.h"
 
 namespace Fiasco {
 #include <l4/sys/consts.h>
@@ -31,14 +35,16 @@ L4lx::Env* L4lx::Env::env()
 	try {
 		static L4lx::Env _env;
 		return &_env;
-	} catch(Ram_session::Quota_exceeded) {
-		PWRN("heap size exceeds available ram!");
+	} catch (Out_of_ram) {
+	//} catch(Ram_session::Quota_exceeded) {
+		Genode::warning("heap size exceeds available ram!");
+		//PWRN("heap size exceeds available ram!");
 		return 0;
 	}
 }
 
 
-L4lx::Env::Env() : _rm(Genode::env()->heap()) {
+L4lx::Env::Env() : _rm(&genode_alloc()) {
 
 	/* Create an empty L4Linux specific region-map */
 	_rm.add_range(0, ~0UL);

@@ -42,7 +42,8 @@ extern "C" {
 		}
 
 		try {
-			Genode::env()->rm_session()->attach_at(ref->cap(), min_addr);
+			genode_env().rm().attach_at(ref->cap(), min_addr);
+			//Genode::env()->rm_session()->attach_at(ref->cap(), min_addr);
 		} catch(...) {
 			Genode::warning(__func__, ": could not attach "
 			                "dataspace ", ref->name(), " at ", (void*)min_addr);

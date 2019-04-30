@@ -17,6 +17,8 @@
 #include <terminal_session/connection.h>
 #include <foc/capability_space.h>
 
+#include "genode_env.h"
+
 #include <linux.h>
 #include <vcpu.h>
 
@@ -32,7 +34,7 @@ static Terminal::Connection *terminal() {
 
 	if (!initialized) {
 		try {
-			static Terminal::Connection terminal;
+			static Terminal::Connection terminal { genode_env() };
 			t = &terminal;
 		} catch(...) { }
 		initialized = true;
@@ -64,7 +66,8 @@ namespace {
 				while (true) {
 					receiver.wait_for_signal();
 					if (l4_error(l4_irq_trigger(_cap)) != -1)
-						PWRN("IRQ terminal trigger failed\n");
+						Genode::warning("IRQ terminal trigger failed\n");
+						//PWRN("IRQ terminal trigger failed\n");
 				}
 			}
 
@@ -103,7 +106,8 @@ extern "C" {
 		static Genode::Native_capability cap = native_cpu.alloc_irq();
 		l4_cap_idx_t const kcap = Genode::Capability_space::kcap(cap);
 		if (!signal_thread)
-			signal_thread = new (Genode::env()->heap()) Signal_thread(kcap);
+			signal_thread = new (genode_alloc()) Signal_thread(kcap);
+			//signal_thread = new (Genode::env()->heap()) Signal_thread(kcap);
 		return kcap;
 	}
 
@@ -113,6 +117,7 @@ extern "C" {
 
 
 	void genode_terminal_stop(unsigned idx) {
-		destroy(Genode::env()->heap(), signal_thread);
+		destroy(genode_alloc(), signal_thread);
+		//destroy(Genode::env()->heap(), signal_thread);
 	}
 }

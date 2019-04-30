@@ -12,7 +12,10 @@
  */
 
 /* Genode includes */
-#include <base/printf.h>
+//#include <base/printf.h>
+#include <base/snprintf.h>
+#include <base/log.h>
+#include <util/string.h>
 
 #include <linux.h>
 
@@ -30,8 +33,30 @@ extern "C" {
 		Linux::Irq_guard guard;
 
 		va_list list;
+
 		va_start(list, format);
-		Genode::vprintf(format, list);
+
+		char buf[1024];
+		char *s = (char *)buf;
+		int len;
+
+		Genode::String_console sc(buf, sizeof(buf));
+
+		sc.vprintf(format, list);
+
+		len = Genode::strlen((const char *)s);
+
+		// strip a line feed at the end
+		if (s[len - 1] == '\n')
+		{
+			s[len - 1] = '\0';
+		}
+
+		// output it
+		Genode::log(Genode::Cstring(s));
+
+		//Genode::vprintf(format, list);
+		va_end(list);
 	}
 
 
@@ -39,7 +64,25 @@ extern "C" {
 	{
 		Linux::Irq_guard guard;
 
-		Genode::vprintf(format, list);
+		char buf[1024];
+		char *s = (char *)buf;
+		int len;
+
+		Genode::String_console sc(buf, sizeof(buf));
+
+		sc.vprintf(format, list);
+
+		len = Genode::strlen((const char *)s);
+
+		// strip a line feed at the end
+		if (s[len - 1] == '\n')
+		{
+			s[len - 1] = '\0';
+		}
+
+		// output it
+		Genode::log(Genode::Cstring(s));
+		//Genode::vprintf(format, list);
 	}
 
 

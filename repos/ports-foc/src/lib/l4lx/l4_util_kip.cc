@@ -11,7 +11,8 @@
  * under the terms of the GNU General Public License version 2.
  */
 
-#include <base/printf.h>
+#include <base/log.h>
+//#include <base/printf.h>
 #include <util/string.h>
 
 namespace Fiasco {
@@ -33,7 +34,8 @@ extern "C" {
 	{
 		const char *s = l4_kip_version_string(k);
 		if (!s) {
-			PWRN("Kip parsing failed!");
+			Genode::warning("Kip parsing failed!");
+			//PWRN("Kip parsing failed!");
 			return 0;
 		}
 

@@ -17,6 +17,7 @@
 /* L4lx includes */
 #include <dataspace.h>
 
+#include "genode_env.h"
 
 L4lx::Dataspace* L4lx::Dataspace_tree::insert(const char* name,
                                               Genode::Dataspace_capability cap)
@@ -25,7 +26,8 @@ L4lx::Dataspace* L4lx::Dataspace_tree::insert(const char* name,
 
 	Genode::Dataspace_client dsc(cap);
 	Dataspace *ds =
-		new (Genode::env()->heap()) Single_dataspace(name, dsc.size(), cap);
+		new (genode_alloc()) Single_dataspace(name, dsc.size(), cap);
+		//new (Genode::env()->heap()) Single_dataspace(name, dsc.size(), cap);
 	insert(ds);
 	return ds;
 }

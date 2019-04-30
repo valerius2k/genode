@@ -11,7 +11,8 @@
  * under the terms of the GNU General Public License version 2.
  */
 
-#include <base/printf.h>
+#include <base/log.h>
+//#include <base/printf.h>
 
 namespace Fiasco {
 #include <l4/util/cpu.h>
@@ -23,7 +24,7 @@ extern "C" {
 
 	unsigned int l4util_cpu_capabilities(void)
 	{
-		PWRN("%s: Not implemented yet!",__func__);
+		Genode::warning("%s: Not implemented yet!",__func__);
 		return 0;
 	}
 

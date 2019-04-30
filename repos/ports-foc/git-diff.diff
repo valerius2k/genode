@@ -1,0 +1,1293 @@
+diff --git a/lib/mk/l4lx.mk b/lib/mk/l4lx.mk
+index f879423..e04b562 100644
+--- a/lib/mk/l4lx.mk
++++ b/lib/mk/l4lx.mk
+@@ -38,6 +38,7 @@ INC_DIR += $(REP_DIR)/include \
+            $(REP_DIR)/src/lib/l4lx/include \
+            $(L4_BUILD_DIR)/include/x86 \
+            $(L4_BUILD_DIR)/include/x86/l4f \
++           $(L4_BUILD_DIR)/include/x86/l4 \
+            $(L4_BUILD_DIR)/include
+ 
+ # for reusing the 'Expanding_rm_session' from the platform env in dataspace.h
+diff --git a/lib/mk/l4sys.mk b/lib/mk/l4sys.mk
+index 7e56be9..bb2e465 100644
+--- a/lib/mk/l4sys.mk
++++ b/lib/mk/l4sys.mk
+@@ -3,6 +3,7 @@ L4_BUILD_DIR := $(BUILD_BASE_DIR)/var/libcache/syscall-foc/build
+ SRC_C += errtostr.c
+ CC_OPT += -I$(L4_BUILD_DIR)/include/x86 \
+           -I$(L4_BUILD_DIR)/include/x86/l4f \
++          -I$(L4_BUILD_DIR)/include/x86/l4 \
+           -I$(L4_BUILD_DIR)/include
+ 
+ vpath errtostr.c $(L4_BUILD_DIR)/source/pkg/l4re-core/l4sys/lib/src
+diff --git a/src/lib/l4lx/dataspace.cc b/src/lib/l4lx/dataspace.cc
+index 9064ecd..41c7828 100644
+--- a/src/lib/l4lx/dataspace.cc
++++ b/src/lib/l4lx/dataspace.cc
+@@ -17,6 +17,7 @@
+ /* L4lx includes */
+ #include <dataspace.h>
+ 
++#include "genode_env.h"
+ 
+ L4lx::Dataspace* L4lx::Dataspace_tree::insert(const char* name,
+                                               Genode::Dataspace_capability cap)
+@@ -25,7 +26,8 @@ L4lx::Dataspace* L4lx::Dataspace_tree::insert(const char* name,
+ 
+ 	Genode::Dataspace_client dsc(cap);
+ 	Dataspace *ds =
+-		new (Genode::env()->heap()) Single_dataspace(name, dsc.size(), cap);
++		new (genode_alloc()) Single_dataspace(name, dsc.size(), cap);
++		//new (Genode::env()->heap()) Single_dataspace(name, dsc.size(), cap);
+ 	insert(ds);
+ 	return ds;
+ }
+diff --git a/src/lib/l4lx/env.cc b/src/lib/l4lx/env.cc
+index 2a45b01..fc3b61a 100644
+--- a/src/lib/l4lx/env.cc
++++ b/src/lib/l4lx/env.cc
+@@ -13,12 +13,16 @@
+ 
+ /* Genode includes */
+ #include <base/env.h>
+-#include <base/printf.h>
+-#include <dataspace/client.h>
++#include <base/log.h>
++//#include <base/printf.h>
++#include <base/quota_guard.h>
++//#include <dataspace/client.h>
+ 
+ /* L4lx library includes */
+ #include <env.h>
+ 
++#include "genode_env.h"
++
+ namespace Fiasco {
+ #include <l4/sys/consts.h>
+ }
+@@ -31,14 +35,16 @@ L4lx::Env* L4lx::Env::env()
+ 	try {
+ 		static L4lx::Env _env;
+ 		return &_env;
+-	} catch(Ram_session::Quota_exceeded) {
+-		PWRN("heap size exceeds available ram!");
++	} catch (Out_of_ram) {
++	//} catch(Ram_session::Quota_exceeded) {
++		Genode::warning("heap size exceeds available ram!");
++		//PWRN("heap size exceeds available ram!");
+ 		return 0;
+ 	}
+ }
+ 
+ 
+-L4lx::Env::Env() : _rm(Genode::env()->heap()) {
++L4lx::Env::Env() : _rm(&genode_alloc()) {
+ 
+ 	/* Create an empty L4Linux specific region-map */
+ 	_rm.add_range(0, ~0UL);
+diff --git a/src/lib/l4lx/genode_block.cc b/src/lib/l4lx/genode_block.cc
+index 5de76bf..90bf79f 100644
+--- a/src/lib/l4lx/genode_block.cc
++++ b/src/lib/l4lx/genode_block.cc
+@@ -14,10 +14,14 @@
+ #include <base/env.h>
+ #include <base/log.h>
+ #include <base/allocator_avl.h>
++#include <util/xml_node.h>
++#include <base/attached_rom_dataspace.h>
+ #include <block_session/connection.h>
+-#include <os/config.h>
++//#include <os/config.h>
+ #include <foc/capability_space.h>
+ 
++#include "genode_env.h"
++
+ #include <vcpu.h>
+ #include <linux.h>
+ 
+@@ -65,7 +69,7 @@ namespace {
+ 				int idx = _find(0);
+ 				if (idx == 0) {
+ 					Genode::error("Req cache full!");
+-					enter_kdebug("Req_cache");
++					Fiasco::enter_kdebug("Req_cache");
+ 				}
+ 
+ 				_cache[idx] = Req_entry(packet, request);
+@@ -76,7 +80,7 @@ namespace {
+ 				int idx = _find(packet);
+ 				if (idx == 0) {
+ 					Genode::error("Req cache entry not found!");
+-					enter_kdebug("Req_cache");
++					Fiasco::enter_kdebug("Req_cache");
+ 				}
+ 
+ 				*request = _cache[idx].req;
+@@ -115,8 +119,10 @@ namespace {
+ 		public:
+ 
+ 			Block_device(const char *label)
+-			: _alloc(Genode::env()->heap()),
+-			  _session(&_alloc, TX_BUF_SIZE, label),
++			: _alloc(&genode_alloc()),
++			//: _alloc(Genode::env()->heap()),
++			  _session(genode_env(), &_alloc, TX_BUF_SIZE, label),
++			//  _session(&_alloc, TX_BUF_SIZE, label),
+ 			  _irq_cap(_alloc_irq())
+ 			{
+ 				_session.info(&_blk_cnt, &_blk_size, &_blk_ops);
+@@ -213,7 +219,10 @@ extern "C" {
+ 		static unsigned count = 0;
+ 		if (count == 0) {
+ 			try {
+-				Xml_node config = Genode::config()->xml_node();
++				Genode::Env &env = genode_env();
++				Genode::Attached_rom_dataspace cfg { env, "config" };
++				Xml_node config = cfg.xml();
++				//Xml_node config = Genode::config()->xml_node();
+ 				size_t sn_cnt   = config.num_sub_nodes();
+ 				for (unsigned i = 0; i < sn_cnt; i++)
+ 					if (config.sub_node(i).has_type("block"))
+@@ -223,14 +232,16 @@ extern "C" {
+ 					return count;
+ 
+ 				devices = (Block_device**)
+-					env()->heap()->alloc(count * sizeof(Block_device*));
++					genode_alloc().alloc(count * sizeof(Block_device*));
++					//env()->heap()->alloc(count * sizeof(Block_device*));
+ 
+ 				char label[64];
+ 				for (unsigned i = 0, j = 0; i < sn_cnt; i++) {
+ 					if (config.sub_node(i).has_type("block")) {
+ 						config.sub_node(i).attribute("label").value(label,
+ 						                                            sizeof(label));
+-						devices[j] = new (env()->heap()) Block_device(label);
++						devices[j] = new (genode_alloc()) Block_device(label);
++						//devices[j] = new (env()->heap()) Block_device(label);
+ 						j++;
+ 					}
+ 				}
+diff --git a/src/lib/l4lx/genode_framebuffer.cc b/src/lib/l4lx/genode_framebuffer.cc
+index bca235c..2c88521 100644
+--- a/src/lib/l4lx/genode_framebuffer.cc
++++ b/src/lib/l4lx/genode_framebuffer.cc
+@@ -12,7 +12,7 @@
+  */
+ 
+ /* Genode includes */
+-#include <base/printf.h>
++//#include <base/printf.h>
+ #include <base/env.h>
+ #include <framebuffer_session/connection.h>
+ 
+@@ -21,6 +21,8 @@
+ #include <linux.h>
+ #include <genode/framebuffer.h>
+ 
++#include "genode_env.h"
++
+ 
+ static Framebuffer::Connection *framebuffer() {
+ 	static bool initialized = false;
+@@ -28,7 +30,7 @@ static Framebuffer::Connection *framebuffer() {
+ 
+ 	if (!initialized) {
+ 		try {
+-			static Framebuffer::Connection fb;
++			static Framebuffer::Connection fb { genode_env(), Framebuffer::Mode() };
+ 			f = &fb;
+ 		} catch(...) {}
+ 		initialized = true;
+diff --git a/src/lib/l4lx/genode_input.cc b/src/lib/l4lx/genode_input.cc
+index 985e3f8..ca76660 100644
+--- a/src/lib/l4lx/genode_input.cc
++++ b/src/lib/l4lx/genode_input.cc
+@@ -17,6 +17,8 @@
+ #include <input/event.h>
+ #include <input/keycodes.h>
+ 
++#include "genode_env.h"
++
+ #include <linux.h>
+ #include <env.h>
+ 
+@@ -26,7 +28,8 @@ enum Absolute_axes {ABS_X=0x00, ABS_Y=0x01, ABS_WHEEL=0x08 };
+ 
+ 
+ static Input::Connection *input() {
+-	static Input::Connection _inp;
++	static Input::Connection _inp { genode_env() };
++	//static Input::Connection _inp;
+ 	return &_inp;
+ }
+ 
+@@ -92,7 +95,42 @@ extern "C" {
+ 	{
+ 		using namespace Input;
+ 
+-		switch(ev->type()) {
++		ev->handle_absolute_motion([&] (int x, int y) {
++			genode_input_event(mouse, EV_ABS, ABS_X, x);
++			genode_input_event(mouse, EV_ABS, ABS_Y, y);
++		});
++
++		ev->handle_relative_motion([&] (int x, int y) {
++			genode_input_event(mouse, EV_REL, REL_X, x);
++			genode_input_event(mouse, EV_REL, REL_Y, y);
++			return;
++		});
++
++		ev->handle_press([&] (Input::Keycode key, Genode::Codepoint) {
++			if (key < BTN_MISC)
++				genode_input_event(keyb, EV_KEY, key, 1);
++			else
++				genode_input_event(mouse, EV_KEY, key, 1);
++			return;
++		});
++
++		ev->handle_release([&] (Input::Keycode key) {
++			if (key < BTN_MISC)
++				genode_input_event(keyb, EV_KEY, key, 0);
++			else
++				genode_input_event(mouse, EV_KEY, key, 0);
++			return;
++		});
++
++		ev->handle_wheel([&] (int x, int y) {
++			if (x)
++				genode_input_event(mouse, EV_REL, REL_WHEEL, x);
++			else
++				genode_input_event(mouse, EV_ABS, ABS_WHEEL, x);
++			return;
++		});
++
++		/* switch(ev->type()) {
+ 		case Event::MOTION:
+ 			{
+ 				if(ev->rx())
+@@ -132,7 +170,7 @@ extern "C" {
+ 		case Event::INVALID:
+ 		default:
+ 			;
+-		}
++		} */
+ 	}
+ 
+ 
+diff --git a/src/lib/l4lx/genode_net.cc b/src/lib/l4lx/genode_net.cc
+index af134b0..89f0f9e 100644
+--- a/src/lib/l4lx/genode_net.cc
++++ b/src/lib/l4lx/genode_net.cc
+@@ -23,6 +23,8 @@
+ #include <timer_session/connection.h>
+ #include <foc/capability_space.h>
+ 
++#include "genode_env.h"
++
+ #include <vcpu.h>
+ #include <linux.h>
+ 
+@@ -83,8 +85,10 @@ static Nic::Connection *nic() {
+ 
+ 	try {
+ 		Linux::Irq_guard guard;
+-		static Nic::Packet_allocator tx_block_alloc(Genode::env()->heap());
+-		static Nic::Connection nic(&tx_block_alloc, BUF_SIZE, BUF_SIZE);
++		static Nic::Packet_allocator tx_block_alloc(&genode_alloc());
++		//static Nic::Packet_allocator tx_block_alloc(Genode::env()->heap());
++		static Nic::Connection nic(genode_env(), &tx_block_alloc, BUF_SIZE, BUF_SIZE);
++		//static Nic::Connection nic(&tx_block_alloc, BUF_SIZE, BUF_SIZE);
+ 		n = &nic;
+ 	} catch(...) { }
+ 	initialized = true;
+diff --git a/src/lib/l4lx/genode_terminal.cc b/src/lib/l4lx/genode_terminal.cc
+index 24f1e1e..6af0c0a 100644
+--- a/src/lib/l4lx/genode_terminal.cc
++++ b/src/lib/l4lx/genode_terminal.cc
+@@ -17,6 +17,8 @@
+ #include <terminal_session/connection.h>
+ #include <foc/capability_space.h>
+ 
++#include "genode_env.h"
++
+ #include <linux.h>
+ #include <vcpu.h>
+ 
+@@ -32,7 +34,7 @@ static Terminal::Connection *terminal() {
+ 
+ 	if (!initialized) {
+ 		try {
+-			static Terminal::Connection terminal;
++			static Terminal::Connection terminal { genode_env() };
+ 			t = &terminal;
+ 		} catch(...) { }
+ 		initialized = true;
+@@ -64,7 +66,8 @@ namespace {
+ 				while (true) {
+ 					receiver.wait_for_signal();
+ 					if (l4_error(l4_irq_trigger(_cap)) != -1)
+-						PWRN("IRQ terminal trigger failed\n");
++						Genode::warning("IRQ terminal trigger failed\n");
++						//PWRN("IRQ terminal trigger failed\n");
+ 				}
+ 			}
+ 
+@@ -103,7 +106,8 @@ extern "C" {
+ 		static Genode::Native_capability cap = native_cpu.alloc_irq();
+ 		l4_cap_idx_t const kcap = Genode::Capability_space::kcap(cap);
+ 		if (!signal_thread)
+-			signal_thread = new (Genode::env()->heap()) Signal_thread(kcap);
++			signal_thread = new (genode_alloc()) Signal_thread(kcap);
++			//signal_thread = new (Genode::env()->heap()) Signal_thread(kcap);
+ 		return kcap;
+ 	}
+ 
+@@ -113,6 +117,7 @@ extern "C" {
+ 
+ 
+ 	void genode_terminal_stop(unsigned idx) {
+-		destroy(Genode::env()->heap(), signal_thread);
++		destroy(genode_alloc(), signal_thread);
++		//destroy(Genode::env()->heap(), signal_thread);
+ 	}
+ }
+diff --git a/src/lib/l4lx/include/dataspace.h b/src/lib/l4lx/include/dataspace.h
+index 599033f..708dc40 100644
+--- a/src/lib/l4lx/include/dataspace.h
++++ b/src/lib/l4lx/include/dataspace.h
+@@ -23,6 +23,8 @@
+ #include <platform_env.h>
+ #include <foc/capability_space.h>
+ 
++#include "genode_env.h"
++
+ namespace L4lx {
+ 
+ 	class Dataspace : public Genode::Avl_node<Dataspace>
+@@ -100,9 +102,11 @@ namespace L4lx {
+ 		typedef Genode::size_t size_t;
+ 		typedef Genode::off_t  off_t;
+ 
+-		Expanding_region_map(size_t size)
++		Expanding_region_map(Genode::Env &env, size_t size)
+ 		:
++			Genode::Rm_connection(env),
+ 			Genode::Region_map_client(Genode::Rm_connection::create(size))
++
+ 		{ }
+ 
+ 		Local_addr attach(Genode::Dataspace_capability ds, size_t size, off_t offset,
+@@ -110,14 +114,19 @@ namespace L4lx {
+ 		                  bool executable,
+ 		                  bool writable) override
+ 		{
+-			return retry<Genode::Region_map::Out_of_metadata>(
++			/* return retry<Genode::Region_map::Out_of_metadata>(
+ 				[&] () {
+ 					return Genode::Region_map_client::attach(ds, size, offset,
+ 					                                         use_local_addr,
+ 					                                         local_addr,
+ 					                                         executable,
+ 					                                         writable); },
+-				[&] () { Rm_connection::upgrade_ram(8*1024); });
++				[&] () { Rm_connection::upgrade_ram(8*1024); }); */
++			return Genode::Region_map_client::attach(ds, size, offset,
++					                         use_local_addr,
++					                         local_addr,
++					                         executable,
++					                         writable);
+ 		}
+ 	};
+ 
+@@ -130,6 +139,9 @@ namespace L4lx {
+ 
+ 			Genode::Ram_dataspace_capability *_chunks;
+ 
++			Genode::Env &_env;
++
++			Genode::Allocator &_alloc;
+ 	public:
+ 
+ 			enum {
+@@ -137,13 +149,14 @@ namespace L4lx {
+ 				CHUNK_SIZE      = 1 << CHUNK_SIZE_LOG2,
+ 			};
+ 
+-			Chunked_dataspace(const char*          name,
++			Chunked_dataspace(Genode::Env          &env,
++			                  const char*          name,
+ 			                  Genode::size_t       size,
+ 			                  Fiasco::l4_cap_idx_t ref)
+-			: Dataspace(name, size, ref), _rm(size)
++			: Dataspace(name, size, ref), _rm(env, size), _env(env), _alloc(genode_alloc())
+ 			{
+-				_chunks = (Genode::Ram_dataspace_capability*)
+-					Genode::env()->heap()->alloc(sizeof(Genode::Ram_dataspace_capability) * (size/CHUNK_SIZE));
++				genode_alloc().alloc(sizeof(Genode::Ram_dataspace_capability) * (size/CHUNK_SIZE), 
++						(Genode::Ram_dataspace_capability **)&_chunks);
+ 			}
+ 
+ 			Genode::Dataspace_capability cap() { return _rm.dataspace(); }
+@@ -154,16 +167,19 @@ namespace L4lx {
+ 				int i = off / CHUNK_SIZE;
+ 				if (_chunks[i].valid()) return;
+ 
+-				Genode::size_t ram_avail = Genode::env()->ram_session()->avail();
++				Genode::size_t ram_avail = _env.pd().avail_ram().value;
++				//Genode::size_t ram_avail = genode_env()->ram_session()->avail();
+ 				if (greedy && ram_avail < 4*CHUNK_SIZE) {
+ 					char buf[128];
+ 					Genode::snprintf(buf, sizeof(buf), "ram_quota=%ld",
+ 					                 4*CHUNK_SIZE - ram_avail);
+-					Genode::env()->parent()->resource_request(buf);
++					_env.parent().resource_request(buf);
++					//Genode::env()->parent()->resource_request(buf);
+ 				}
+ 
+-				_chunks[i] = Genode::env()->ram_session()->alloc(CHUNK_SIZE);
+-				_rm.attach(_chunks[i], 0, 0, true, off, false);
++				_alloc.alloc(CHUNK_SIZE, (Genode::Ram_dataspace_capability **)&_chunks[i]);
++				//_chunks[i] = Genode::env()->ram_session()->alloc(CHUNK_SIZE);
++				_rm.attach(_chunks[i], 0, 0, true, off, false, true);
+ 			}
+ 
+ 			bool free(Genode::size_t off)
+@@ -171,7 +187,8 @@ namespace L4lx {
+ 				off = Genode::align_addr((off-(CHUNK_SIZE-1)), CHUNK_SIZE_LOG2);
+ 				int i = off / CHUNK_SIZE;
+ 				if (!_chunks[i].valid()) return false;
+-				Genode::env()->ram_session()->free(_chunks[i]);
++				_env.ram().free(_chunks[i]);
++				//Genode::env()->ram_session()->free(_chunks[i]);
+ 				_chunks[i] = Genode::Ram_dataspace_capability();
+ 				return true;
+ 			}
+diff --git a/src/lib/l4lx/include/linux.h b/src/lib/l4lx/include/linux.h
+index a0fd5d5..182cb31 100644
+--- a/src/lib/l4lx/include/linux.h
++++ b/src/lib/l4lx/include/linux.h
+@@ -14,7 +14,8 @@
+ #ifndef _L4LX__LINUX_H_
+ #define _L4LX__LINUX_H_
+ 
+-#include <base/printf.h>
++#include <base/log.h>
++//#include <base/printf.h>
+ #include <base/thread.h>
+ 
+ #include <genode/linkage.h>
+@@ -43,7 +44,8 @@ FASTCALL void     l4x_cpumask_copy(struct irq_data*, const struct cpumask*);
+ 	l4x_irq_restore(flags); \
+ } while(0)
+ 
+-#define NOT_IMPLEMENTED IRQ_SAFE(PWRN("%s: not implemented yet!", __func__););
++#define NOT_IMPLEMENTED IRQ_SAFE(Genode::warning("%s: not implemented yet!", __func__););
++//#define NOT_IMPLEMENTED IRQ_SAFE(PWRN("%s: not implemented yet!", __func__););
+ 
+ #ifdef __cplusplus
+ }
+diff --git a/src/lib/l4lx/include/task.h b/src/lib/l4lx/include/task.h
+index 6eb4619..b5121ab 100644
+--- a/src/lib/l4lx/include/task.h
++++ b/src/lib/l4lx/include/task.h
+@@ -33,7 +33,8 @@ namespace L4lx {
+ 		private:
+ 
+ 			Fiasco::l4_cap_idx_t         _ref;
+-			Genode::Pd_connection        _pd;
++			Genode::Env                  &_env;
++			Genode::Pd_connection        _pd { _env };
+ 			Genode::Foc_native_pd_client _native_pd { _pd.native_pd() };
+ 			Genode::Native_capability    _cap;
+ 
+@@ -43,9 +44,9 @@ namespace L4lx {
+ 			 ** Constructor **
+ 			 *****************/
+ 
+-			Task(Fiasco::l4_cap_idx_t ref)
++			Task(Fiasco::l4_cap_idx_t ref, Genode::Env &env)
+ 			:
+-				_ref(ref), _cap(_native_pd.task_cap())
++				_ref(ref), _env(env), _cap(_native_pd.task_cap())
+ 			{
+ 				using namespace Fiasco;
+ 
+diff --git a/src/lib/l4lx/include/vcpu.h b/src/lib/l4lx/include/vcpu.h
+index 102e87b..f891411 100644
+--- a/src/lib/l4lx/include/vcpu.h
++++ b/src/lib/l4lx/include/vcpu.h
+@@ -24,6 +24,8 @@
+ #include <timer_session/connection.h>
+ #include <foc/native_thread.h>
+ 
++#include "genode_env.h"
++
+ namespace Fiasco {
+ #include <l4/sys/utcb.h>
+ }
+@@ -40,16 +42,18 @@ namespace L4lx {
+ 			enum { WEIGHT = Genode::Cpu_session::Weight::DEFAULT_WEIGHT };
+ 
+ 			Genode::Lock                _lock;
++			Genode::Env                 &_env;
+ 			L4_CV void                (*_func)(void *data);
+ 			unsigned long               _data;
+ 			Genode::addr_t              _vcpu_state;
+-			Timer::Connection           _timer;
++			Timer::Connection           _timer { _env };
+ 			unsigned                    _cpu_nr;
+ 			Fiasco::l4_utcb_t   * const _utcb;
+ 
+ 		public:
+ 
+-			Vcpu(const char                 *str,
++			Vcpu(Genode::Env                &env,
++			     const char                 *str,
+ 			     L4_CV void                (*func)(void *data),
+ 			     unsigned long              *data,
+ 			     Genode::size_t              stack_size,
+@@ -58,11 +62,13 @@ namespace L4lx {
+ 			: Genode::Thread(WEIGHT, str, stack_size,
+ 			                 Genode::Affinity::Location(cpu_nr, 0)),
+ 			  _lock(Genode::Cancelable_lock::LOCKED),
++			  _env(env),
+ 			  _func(func),
+ 			  _data(data ? *data : 0),
+ 			  _vcpu_state(vcpu_state),
+ 			  _cpu_nr(cpu_nr),
+-			  _utcb((Fiasco::l4_utcb_t *)Genode::Cpu_thread_client(cap()).state().utcb)
++			  _utcb((Fiasco::l4_utcb_t *)_env.rm().attach(Genode::Cpu_thread_client(cap()).utcb()))
++			  //_utcb((Fiasco::l4_utcb_t *)Genode::Cpu_thread_client(cap()).state().utcb)
+ 			{
+ 				start();
+ 
+diff --git a/src/lib/l4lx/l4_io.cc b/src/lib/l4lx/l4_io.cc
+index ad49a67..00cfccb 100644
+--- a/src/lib/l4lx/l4_io.cc
++++ b/src/lib/l4lx/l4_io.cc
+@@ -18,6 +18,8 @@
+ 
+ #include <env.h>
+ 
++#include "genode_env.h"
++
+ namespace Fiasco {
+ #include <l4/io/io.h>
+ }
+@@ -63,13 +65,15 @@ extern "C" {
+ 	{
+ 		using namespace Genode;
+ 
+-		Io_mem_connection *iomem = new (env()->heap()) Io_mem_connection(phys, size);
++		Io_mem_connection *iomem = new (genode_alloc()) Io_mem_connection(genode_env(), phys, size);
++		//Io_mem_connection *iomem = new (env()->heap()) Io_mem_connection(phys, size);
+ 		L4lx::Dataspace *ds =
+ 			L4lx::Env::env()->dataspaces()->insert("iomem", iomem->dataspace());
+ 		if (!L4lx::Env::env()->rm()->attach_at(ds, size, 0, (void*)virt)) {
+ 			error("could not reserve IO mem region at ", Hex(virt));
+ 			L4lx::Env::env()->dataspaces()->remove(ds);
+-			destroy(env()->heap(), iomem);
++			destroy(genode_alloc(), iomem);
++			//destroy(env()->heap(), iomem);
+ 			return 1;
+ 		}
+ 		return 0;
+diff --git a/src/lib/l4lx/l4_log.cc b/src/lib/l4lx/l4_log.cc
+index 146bedc..9342e2d 100644
+--- a/src/lib/l4lx/l4_log.cc
++++ b/src/lib/l4lx/l4_log.cc
+@@ -12,7 +12,10 @@
+  */
+ 
+ /* Genode includes */
+-#include <base/printf.h>
++//#include <base/printf.h>
++#include <base/snprintf.h>
++#include <base/log.h>
++#include <util/string.h>
+ 
+ #include <linux.h>
+ 
+@@ -30,8 +33,30 @@ extern "C" {
+ 		Linux::Irq_guard guard;
+ 
+ 		va_list list;
++
+ 		va_start(list, format);
+-		Genode::vprintf(format, list);
++
++		char buf[1024];
++		char *s = (char *)buf;
++		int len;
++
++		Genode::String_console sc(buf, sizeof(buf));
++
++		sc.vprintf(format, list);
++
++		len = Genode::strlen((const char *)s);
++
++		// strip a line feed at the end
++		if (s[len - 1] == '\n')
++		{
++			s[len - 1] = '\0';
++		}
++
++		// output it
++		Genode::log(Genode::Cstring(s));
++
++		//Genode::vprintf(format, list);
++		va_end(list);
+ 	}
+ 
+ 
+@@ -39,7 +64,25 @@ extern "C" {
+ 	{
+ 		Linux::Irq_guard guard;
+ 
+-		Genode::vprintf(format, list);
++		char buf[1024];
++		char *s = (char *)buf;
++		int len;
++
++		Genode::String_console sc(buf, sizeof(buf));
++
++		sc.vprintf(format, list);
++
++		len = Genode::strlen((const char *)s);
++
++		// strip a line feed at the end
++		if (s[len - 1] == '\n')
++		{
++			s[len - 1] = '\0';
++		}
++
++		// output it
++		Genode::log(Genode::Cstring(s));
++		//Genode::vprintf(format, list);
+ 	}
+ 
+ 
+diff --git a/src/lib/l4lx/l4_re_c_dataspace.cc b/src/lib/l4lx/l4_re_c_dataspace.cc
+index 8a15bcc..19fd8b5 100644
+--- a/src/lib/l4lx/l4_re_c_dataspace.cc
++++ b/src/lib/l4lx/l4_re_c_dataspace.cc
+@@ -42,7 +42,8 @@ extern "C" {
+ 		}
+ 
+ 		try {
+-			Genode::env()->rm_session()->attach_at(ref->cap(), min_addr);
++			genode_env().rm().attach_at(ref->cap(), min_addr);
++			//Genode::env()->rm_session()->attach_at(ref->cap(), min_addr);
+ 		} catch(...) {
+ 			Genode::warning(__func__, ": could not attach "
+ 			                "dataspace ", ref->name(), " at ", (void*)min_addr);
+diff --git a/src/lib/l4lx/l4_re_c_debug.cc b/src/lib/l4lx/l4_re_c_debug.cc
+index 8510006..58f96fd 100644
+--- a/src/lib/l4lx/l4_re_c_debug.cc
++++ b/src/lib/l4lx/l4_re_c_debug.cc
+@@ -1,4 +1,4 @@
+-/*
++    /*
+  * \brief  L4Re functions needed by L4Linux.
+  * \author Stefan Kalkowski
+  * \date   2011-04-17
+@@ -12,7 +12,8 @@
+  */
+ 
+ /* Genode includes */
+-#include <base/printf.h>
++#include <base/log.h>
++//#include <base/printf.h>
+ 
+ namespace Fiasco {
+ #include <l4/re/c/debug.h>
+@@ -24,7 +25,8 @@ extern "C" {
+ 
+ 	void l4re_debug_obj_debug(l4_cap_idx_t srv, unsigned long function)
+ 	{
+-		PWRN("%s: Not implemented yet!",__func__);
++		Genode::warning("%s: Not implemented yet!",__func__);
++		//PWRN("%s: Not implemented yet!",__func__);
+ 	}
+ 
+ }
+diff --git a/src/lib/l4lx/l4_re_c_mem_alloc.cc b/src/lib/l4lx/l4_re_c_mem_alloc.cc
+index 15efd21..675891f 100644
+--- a/src/lib/l4lx/l4_re_c_mem_alloc.cc
++++ b/src/lib/l4lx/l4_re_c_mem_alloc.cc
+@@ -20,6 +20,8 @@
+ #include <dataspace.h>
+ #include <env.h>
+ 
++#include "genode_env.h"
++
+ namespace Fiasco {
+ #include <l4/re/c/mem_alloc.h>
+ }
+@@ -32,18 +34,22 @@ extern "C" {
+ 	                   unsigned long flags)
+ 	{
+ 		using namespace L4lx;
++		Genode::Env &env = genode_env();
+ 
+ 		Dataspace *ds;
+ 		if (Genode::log2(size) >= Chunked_dataspace::CHUNK_SIZE_LOG2) {
+-			ds = new (Genode::env()->heap())
+-				Chunked_dataspace("lx_memory", size, mem);
++			ds = new (genode_alloc())
++			//ds = new (env.heap())
++				Chunked_dataspace(env, "lx_memory", size, mem);
+ 		} else {
+ 			Genode::Dataspace_capability cap =
+-				Genode::env()->ram_session()->alloc(size);
+-			ds = new (Genode::env()->heap())
++				env.ram().alloc(size);
++				//env.ram_session()->alloc(size);
++			ds = new (genode_alloc())
++			//ds = new (env.heap())
+ 				Single_dataspace("lx_memory", size, cap, mem);
+ 		}
+-		Env::env()->dataspaces()->insert(ds);
++		L4lx::Env::env()->dataspaces()->insert(ds);
+ 		return 0;
+ 	}
+ 
+diff --git a/src/lib/l4lx/l4_re_c_rm.cc b/src/lib/l4lx/l4_re_c_rm.cc
+index 2a9e381..2044000 100644
+--- a/src/lib/l4lx/l4_re_c_rm.cc
++++ b/src/lib/l4lx/l4_re_c_rm.cc
+@@ -17,6 +17,8 @@
+ #include <base/stdint.h>
+ #include <util/touch.h>
+ 
++#include "genode_env.h"
++
+ #include <env.h>
+ 
+ namespace Fiasco {
+@@ -105,7 +107,8 @@ extern "C" {
+ 			return -1;
+ 		}
+ 
+-		Genode::env()->rm_session()->detach(addr);
++		genode_env().rm().detach(addr);
++		//Genode::env()->rm_session()->detach(addr);
+ 		L4lx::Env::env()->rm()->free((void*)start);
+ 		return 0;
+ 	}
+diff --git a/src/lib/l4lx/l4_re_env.cc b/src/lib/l4lx/l4_re_env.cc
+index 3eb3044..6927598 100644
+--- a/src/lib/l4lx/l4_re_env.cc
++++ b/src/lib/l4lx/l4_re_env.cc
+@@ -16,6 +16,8 @@
+ #include <rom_session/connection.h>
+ #include <dataspace/client.h>
+ 
++#include "genode_env.h"
++
+ #include <env.h>
+ 
+ namespace Fiasco {
+@@ -39,20 +41,28 @@ extern "C" {
+ 		using namespace L4lx;
+ 
+ 		try {
+-			Genode::Rom_connection rom(name);
++			Genode::Env &env = genode_env();
++			Genode::Rom_connection rom(env, name);
+ 			Genode::size_t size = Genode::Dataspace_client(rom.dataspace()).size();
+-			Genode::Dataspace_capability cap = Genode::env()->ram_session()->alloc(size);
++			Genode::Dataspace_capability cap = env.ram().alloc(size);
++			//Genode::Dataspace_capability cap = Genode::env()->ram_session()->alloc(size);
+ 
+-			void *dst = Genode::env()->rm_session()->attach(cap);
+-			void *src = Genode::env()->rm_session()->attach(rom.dataspace());
++			void *dst = env.rm().attach(cap);
++			//void *dst = Genode::env()->rm_session()->attach(cap);
++			void *src = env.rm().attach(rom.dataspace());
++			//void *src = Genode::env()->rm_session()->attach(rom.dataspace());
+ 
+ 			Genode::memcpy(dst, src, size);
+-			Genode::env()->rm_session()->detach(src);
+-			Genode::env()->rm_session()->detach(dst);
++			env.rm().detach(src);
++			//Genode::env()->rm_session()->detach(src);
++			env.rm().detach(dst);
++			//Genode::env()->rm_session()->detach(dst);
+ 
+-			l4re_env_cap_entry_t *entry = new (Genode::env()->heap())
++			l4re_env_cap_entry_t *entry = new (genode_alloc())
++			//l4re_env_cap_entry_t *entry = new (Genode::env()->heap())
+ 				l4re_env_cap_entry_t();
+-			Dataspace *ds = new (Genode::env()->heap())
++			Dataspace *ds = new (genode_alloc())
++			//Dataspace *ds = new (Genode::env()->heap())
+ 				Single_dataspace("initrd", size, cap);
+ 			Env::env()->dataspaces()->insert(ds);
+ 			entry->cap = ds->ref();
+diff --git a/src/lib/l4lx/l4_util_cpu.cc b/src/lib/l4lx/l4_util_cpu.cc
+index 5fd020c..d34187c 100644
+--- a/src/lib/l4lx/l4_util_cpu.cc
++++ b/src/lib/l4lx/l4_util_cpu.cc
+@@ -11,7 +11,8 @@
+  * under the terms of the GNU General Public License version 2.
+  */
+ 
+-#include <base/printf.h>
++#include <base/log.h>
++//#include <base/printf.h>
+ 
+ namespace Fiasco {
+ #include <l4/util/cpu.h>
+@@ -23,7 +24,7 @@ extern "C" {
+ 
+ 	unsigned int l4util_cpu_capabilities(void)
+ 	{
+-		PWRN("%s: Not implemented yet!",__func__);
++		Genode::warning("%s: Not implemented yet!",__func__);
+ 		return 0;
+ 	}
+ 
+diff --git a/src/lib/l4lx/l4_util_kip.cc b/src/lib/l4lx/l4_util_kip.cc
+index c203352..81fcf00 100644
+--- a/src/lib/l4lx/l4_util_kip.cc
++++ b/src/lib/l4lx/l4_util_kip.cc
+@@ -11,7 +11,8 @@
+  * under the terms of the GNU General Public License version 2.
+  */
+ 
+-#include <base/printf.h>
++#include <base/log.h>
++//#include <base/printf.h>
+ #include <util/string.h>
+ 
+ namespace Fiasco {
+@@ -33,7 +34,8 @@ extern "C" {
+ 	{
+ 		const char *s = l4_kip_version_string(k);
+ 		if (!s) {
+-			PWRN("Kip parsing failed!");
++			Genode::warning("Kip parsing failed!");
++			//PWRN("Kip parsing failed!");
+ 			return 0;
+ 		}
+ 
+diff --git a/src/lib/l4lx/l4_util_util.cc b/src/lib/l4lx/l4_util_util.cc
+index 101d82f..97b16ad 100644
+--- a/src/lib/l4lx/l4_util_util.cc
++++ b/src/lib/l4lx/l4_util_util.cc
+@@ -11,7 +11,7 @@
+  * under the terms of the GNU General Public License version 2.
+  */
+ 
+-#include <base/printf.h>
++//#include <base/printf.h>
+ #include <vcpu.h>
+ 
+ namespace Fiasco {
+@@ -28,7 +28,9 @@ extern "C" {
+ 		if (vcpu)
+ 			vcpu->timer()->msleep(ms);
+ 		else {
+-			static Timer::Connection timer;
++			Genode::Env &env = genode_env();
++			static Timer::Connection timer { env };
++			//static Timer::Connection timer;
+ 			timer.msleep(ms);
+ 		}
+ 	}
+diff --git a/src/lib/l4lx/l4lx_irq.cc b/src/lib/l4lx/l4lx_irq.cc
+index 6e5106f..47a3581 100644
+--- a/src/lib/l4lx/l4lx_irq.cc
++++ b/src/lib/l4lx/l4lx_irq.cc
+@@ -244,7 +244,8 @@ int l4lx_irq_timer_set_affinity(struct irq_data *data, const struct cpumask *des
+ int l4x_alloc_irq_desc_data(int irq)
+ {
+ 	struct l4x_irq_desc_private *p;
+-	Genode::env()->heap()->alloc(sizeof(struct l4x_irq_desc_private), (void**)&p);
++	genode_alloc().alloc(sizeof(struct l4x_irq_desc_private), (void**)&p);
++	//Genode::env()->heap()->alloc(sizeof(struct l4x_irq_desc_private), (void**)&p);
+ 	if (!p) {
+ 		Genode::warning("could not allocate irq descriptor memory!");
+ 		return -12; //ENOMEM;
+diff --git a/src/lib/l4lx/l4lx_memory.cc b/src/lib/l4lx/l4lx_memory.cc
+index ccabace..df0ef37 100644
+--- a/src/lib/l4lx/l4lx_memory.cc
++++ b/src/lib/l4lx/l4lx_memory.cc
+@@ -12,7 +12,7 @@
+  */
+ 
+ /* Genode includes */
+-#include <base/printf.h>
++//#include <base/printf.h>
+ 
+ #include <l4lx_memory.h>
+ #include <env.h>
+diff --git a/src/lib/l4lx/l4lx_task.cc b/src/lib/l4lx/l4lx_task.cc
+index d1326db..a6ecd5e 100644
+--- a/src/lib/l4lx/l4lx_task.cc
++++ b/src/lib/l4lx/l4lx_task.cc
+@@ -12,7 +12,7 @@
+  */
+ 
+ /* Genode includes */
+-#include <base/printf.h>
++//#include <base/printf.h>
+ #include <foc/capability_space.h>
+ 
+ #include <env.h>
+@@ -110,7 +110,8 @@ int l4lx_task_create(l4_cap_idx_t task_no)
+ 
+ 	Linux::Irq_guard guard;
+ 
+-	Env::env()->tasks()->insert(new (Genode::env()->heap()) Task(task_no));
++	Env::env()->tasks()->insert(new (genode_alloc()) Task(task_no, genode_env()));
++	//Env::env()->tasks()->insert(new (Genode::env()->heap()) Task(task_no));
+ 	return 0;
+ }
+ 
+@@ -166,7 +167,8 @@ int l4lx_task_delete_task(l4_cap_idx_t task, unsigned option)
+ 
+ 	Task *entry = Env::env()->tasks()->find_by_ref(task);
+ 	Env::env()->tasks()->remove(entry);
+-	destroy(Genode::env()->heap(), entry);
++	destroy(genode_alloc(), entry);
++	//destroy(Genode::env()->heap(), entry);
+ 	return 0;
+ }
+ 
+diff --git a/src/lib/l4lx/l4lx_thread.cc b/src/lib/l4lx/l4lx_thread.cc
+index 81e5724..91ba272 100644
+--- a/src/lib/l4lx/l4lx_thread.cc
++++ b/src/lib/l4lx/l4lx_thread.cc
+@@ -16,6 +16,8 @@
+ #include <cpu_session/connection.h>
+ #include <foc/native_capability.h>
+ 
++#include "genode_env.h"
++
+ #include <env.h>
+ #include <vcpu.h>
+ #include <l4lx_thread.h>
+@@ -50,7 +52,8 @@ static l4_addr_t utcb_base_addr()
+ 
+ Genode::Cpu_session* L4lx::cpu_connection()
+ {
+-	return Genode::env()->cpu_session();
++	return &genode_env().cpu();
++	//return Genode::env()->cpu_session();
+ }
+ 
+ 
+@@ -132,10 +135,11 @@ l4lx_thread_t l4lx_thread_create(L4_CV void (*thread_func)(void *data),
+ 		*vcpu_state = (l4_vcpu_state_t *) addr;
+ 	}
+ 
+-	Vcpu *vc = new (Genode::env()->heap()) Vcpu(name, thread_func,
+-	                                            (unsigned long*)stack_data, 1024 * 64,
+-	                                            (Genode::addr_t)addr,
+-	                                            l4x_cpu_physmap_get_id(cpu_nr));
++	//Vcpu *vc = new (Genode::env()->heap()) Vcpu(name, thread_func,
++	Vcpu *vc = new (genode_alloc()) Vcpu(genode_env(), name, thread_func,
++	                                     (unsigned long*)stack_data, 1024 * 64,
++	                                     (Genode::addr_t)addr,
++	                                     l4x_cpu_physmap_get_id(cpu_nr));
+ 
+ 	vcpus[thread_id(vc->utcb())] = vc;
+ 
+diff --git a/src/lib/l4lx/l4x_pagefault.cc b/src/lib/l4lx/l4x_pagefault.cc
+index 504fd36..433c151 100644
+--- a/src/lib/l4lx/l4x_pagefault.cc
++++ b/src/lib/l4lx/l4x_pagefault.cc
+@@ -1,9 +1,13 @@
++#include <base/log.h>
++
+ #include <env.h>
+ #include <rm.h>
+ 
+ #include <vcpu.h>
+ #include <linux.h>
+ 
++#include "genode_env.h"
++
+ namespace Fiasco {
+ #include <genode/net.h>
+ #include <l4/sys/irq.h>
+@@ -33,17 +37,20 @@ namespace {
+ 				Signal_receiver           receiver;
+ 				Signal_context            rx;
+ 				Signal_context_capability cap(receiver.manage(&rx));
+-				Genode::env()->parent()->yield_sigh(cap);
++				genode_env().parent().yield_sigh(cap);
++				//Genode::env()->parent()->yield_sigh(cap);
+ 				_sync->unlock();
+ 
+ 				while (true) {
+ 					receiver.wait_for_signal();
+-					Genode::env()->parent()->yield_request();
++					genode_env().parent().yield_request();
++					//Genode::env()->parent()->yield_request();
+ 					{
+ 						Genode::Lock::Guard guard(balloon_lock);
+ 						ballooning = true;
+ 						if (l4_error(l4_irq_trigger(_cap)) != -1)
+-							PWRN("IRQ net trigger failed\n");
++							Genode::warning("IRQ net trigger failed\n");
++							//PWRN("IRQ net trigger failed\n");
+ 					}
+ 				}
+ 			}
+@@ -73,8 +80,10 @@ L4_CV int l4x_forward_pf(Fiasco::l4_umword_t addr,
+ 		try {
+ 			ds->map(addr - r->addr(), !ballooning);
+ 			break;
+-		} catch(Genode::Rm_session::Attach_failed) {
+-			PWRN("Attach of chunk dataspace of failed");
++		//} catch(Genode::Rm_session::Attach_failed) {
++		} catch(Genode::Region_map::Region_conflict) {
++			Genode::warning("Attach of chunk dataspace of failed");
++			//PWRN("Attach of chunk dataspace of failed");
+ 			return 0;
+ 		}
+ 	}
+@@ -118,7 +127,8 @@ void genode_balloon_free_done()
+ 	Linux::Irq_guard ig;
+ 	Genode::Lock::Guard guard(balloon_lock);
+ 	ballooning = false;
+-	Genode::env()->parent()->yield_response();
++	genode_env().parent().yield_response();
++	//Genode::env()->parent()->yield_response();
+ }
+ 
+ }
+diff --git a/src/lib/l4lx/rm.cc b/src/lib/l4lx/rm.cc
+index f07d674..996f9ea 100644
+--- a/src/lib/l4lx/rm.cc
++++ b/src/lib/l4lx/rm.cc
+@@ -17,6 +17,8 @@
+ #include <base/capability.h>
+ #include <util/misc_math.h>
+ 
++#include "genode_env.h"
++
+ /* L4lx includes */
+ #include <env.h>
+ 
+@@ -52,7 +54,8 @@ void* Region_manager::attach(Genode::Dataspace_capability cap, const char* name)
+ 
+ void* Region_manager::attach(Dataspace *ds)
+ {
+-	void* addr = Genode::env()->rm_session()->attach(ds->cap());
++	void* addr = genode_env().rm().attach(ds->cap());
++	//void* addr = Genode::env()->rm_session()->attach(ds->cap());
+ 	alloc_addr(ds->size(), (Genode::addr_t)addr);
+ 	metadata(addr, Region((Genode::addr_t)addr, ds->size(), ds));
+ 	return addr;
+@@ -75,15 +78,17 @@ bool Region_manager::attach_at(Dataspace *ds, Genode::size_t size,
+ 		}
+ 
+ 		/* We have to detach the dataspace placeholder */
+-		Genode::env()->rm_session()->detach(addr);
++		genode_env().rm().detach(addr);
++		//Genode::env()->rm_session()->detach(addr);
+ 	} else
+ 		/* We have to reserve the area in our region map */
+ 		alloc_addr(ds->size(), (Genode::addr_t)addr);
+ 
+ 	/* Now call Genode's region map to really attach the dataspace */
+ 	try {
+-		Genode::env()->rm_session()->attach(ds->cap(), size, offset,
+-		                                    true, (Genode::addr_t) addr);
++		//Genode::env()->rm_session()->attach(ds->cap(), size, offset,
++		genode_env().rm().attach(ds->cap(), size, offset,
++		                         true, (Genode::addr_t) addr);
+ 	} catch(...) {
+ 		return false;
+ 	}
+@@ -98,6 +103,8 @@ Region* Region_manager::reserve_range(Genode::size_t size, int align,
+ 	using namespace Genode;
+ 	void* addr = nullptr;
+ 	addr_t original_start = start;
++	Genode::Env &env = genode_env();
++	Genode::Allocator &alloc = genode_alloc();
+ 
+ 	while (true) {
+ 
+@@ -109,14 +116,20 @@ Region* Region_manager::reserve_range(Genode::size_t size, int align,
+ 			 * We attach a managed-dataspace as a placeholder to
+ 			 * Genode's region-map
+ 			 */
+-			rmc = new (env()->heap()) Rm_connection;
+-			rm  = new (env()->heap()) Region_map_client(rmc->create(size));
+-
+-			addr = start ? env()->rm_session()->attach_at(rm->dataspace(), start)
+-			             : env()->rm_session()->attach(rm->dataspace());
++			rmc = new (alloc) Rm_connection(env);
++			//rmc = new (env()->heap()) Rm_connection;
++			rm  = new (alloc) Region_map_client(rmc->create(size));
++			//rm  = new (env()->heap()) Region_map_client(rmc->create(size));
++
++			addr = start ? env.rm().attach_at(rm->dataspace(), start)
++			             : env.rm().attach(rm->dataspace());
++			//addr = start ? env()->rm_session()->attach_at(rm->dataspace(), start)
++			//             : env()->rm_session()->attach(rm->dataspace());
+ 			break;
+-		} catch(Rm_session::Attach_failed e) {
+-			destroy(env()->heap(), rm);
++		//} catch(Rm_session::Attach_failed e) {
++		} catch(Region_map::Region_conflict e) {
++			destroy(alloc, rm);
++			//destroy(env()->heap(), rm);
+ 			 /* attach with pre-defined address failed, so search one */
+ 			if (start) {
+ 				/* the original start address might have a different alignment */
+@@ -159,7 +172,8 @@ void Region_manager::reserve_range(Genode::addr_t addr, Genode::size_t size,
+                                    const char *name)
+ {
+ 	Genode::Dataspace_capability cap;
+-	L4lx::Dataspace *ds = new (Genode::env()->heap())
++	//L4lx::Dataspace *ds = new (Genode::env()->heap())
++	L4lx::Dataspace *ds = new (genode_alloc())
+ 		L4lx::Single_dataspace(name, size, cap);
+ 	L4lx::Env::env()->dataspaces()->insert(ds);
+ 	alloc_addr(size, (Genode::addr_t)addr);
+@@ -199,11 +213,13 @@ void Region_manager::add_mapping(void *phys, void *virt, bool rw)
+ {
+ 	Mapping *m = _virt_to_phys(virt);
+ 	if (!m) {
+-		m = new (Genode::env()->heap()) Mapping(virt, phys, rw);
++		//m = new (Genode::env()->heap()) Mapping(virt, phys, rw);
++		m = new (genode_alloc()) Mapping(virt, phys, rw);
+ 		_virt_tree.insert(m);
+ 		Phys_mapping *p = _phys_to_virt(phys);
+ 		if (!p) {
+-			p = new (Genode::env()->heap()) Phys_mapping(phys);
++			//p = new (Genode::env()->heap()) Phys_mapping(phys);
++			p = new (genode_alloc()) Phys_mapping(phys);
+ 			_phys_tree.insert(p);
+ 		}
+ 		p->mappings()->insert(m);
+@@ -228,10 +244,12 @@ void Region_manager::remove_mapping(void *virt)
+ 			p->mappings()->remove(m);
+ 			if (!p->mappings()->first()) {
+ 				_phys_tree.remove(p);
+-				Genode::destroy(Genode::env()->heap(), p);
++				//Genode::destroy(Genode::env()->heap(), p);
++				Genode::destroy(genode_alloc(), p);
+ 			}
+ 		}
+-		Genode::destroy(Genode::env()->heap(), m);
++		//Genode::destroy(Genode::env()->heap(), m);
++		Genode::destroy(genode_alloc(), m);
+ 	}
+ }
+ 
+diff --git a/src/lib/l4lx/startup.cc b/src/lib/l4lx/startup.cc
+index 167515a..9f55a81 100644
+--- a/src/lib/l4lx/startup.cc
++++ b/src/lib/l4lx/startup.cc
+@@ -13,18 +13,23 @@
+ 
+ /* Genode includes */
+ #include <base/env.h>
++#include <base/heap.h>
+ #include <base/thread.h>
++#include <base/attached_rom_dataspace.h>
++#include <libc/component.h>
+ #include <dataspace/client.h>
+ #include <rom_session/connection.h>
+ #include <cpu_session/connection.h>
+ #include <util/misc_math.h>
+-#include <os/config.h>
++//#include <os/config.h>
+ #include <foc_native_cpu/client.h>
+ #include <foc/native_capability.h>
+ 
+ /* L4lx includes */
+ #include <env.h>
+ 
++#include "genode_env.h"
++
+ namespace Fiasco {
+ #include <l4/re/env.h>
+ #include <l4/sys/consts.h>
+@@ -49,7 +54,10 @@ static void parse_cmdline(char*** cmd, int *num)
+ 	static char* words[MAX_ARGS];
+ 
+ 	try {
+-		config()->xml_node().attribute("args").value(arg_str, sizeof(arg_str));
++		Env &env = genode_env();
++		Attached_rom_dataspace cfg { env, "config" };
++		cfg.xml().attribute("args").value(arg_str, sizeof(arg_str));
++		//config()->xml_node().attribute("args").value(arg_str, sizeof(arg_str));
+ 	} catch(...) {
+ 		warning("couldn't parse commandline from config!");
+ 		arg_str[0] = 0;
+@@ -78,12 +86,13 @@ static void parse_cmdline(char*** cmd, int *num)
+ }
+ 
+ 
+-static void map_kip()
++static void map_kip(Libc::Env &env)
+ {
+ 	using namespace Genode;
+ 
+ 	/* Open the KIP special file and keep it open */
+-	static Genode::Rom_connection kip_rom("l4v2_kip");
++	static Genode::Rom_connection kip_rom(env, "l4v2_kip");
++	//static Genode::Rom_connection kip_rom("l4v2_kip");
+ 
+ 	/* Attach and register dataspace */
+ 	l4lx_kinfo = L4lx::Env::env()->rm()->attach(kip_rom.dataspace(), "KIP");
+@@ -93,11 +102,11 @@ static void map_kip()
+ }
+ 
+ 
+-static void prepare_l4re_env()
++static void prepare_l4re_env(Libc::Env &genode_env)
+ {
+ 	using namespace Fiasco;
+ 
+-	Genode::Cpu_session &cpu = *Genode::env()->cpu_session();
++	Genode::Cpu_session &cpu = genode_env.cpu();
+ 
+ 	Genode::Foc_native_cpu_client native_cpu(cpu.native_cpu());
+ 
+@@ -119,7 +128,7 @@ static void prepare_l4re_env()
+ }
+ 
+ 
+-static void register_reserved_areas()
++static void register_reserved_areas(Libc::Env &env)
+ {
+ 	using namespace Genode;
+ 
+@@ -131,17 +140,21 @@ static void register_reserved_areas()
+ }
+ 
+ 
+-int main(int, char**)
++void Libc::Component::construct(Libc::Env &env)
+ {
+ 	int    cmd_num = 0;
+ 	char** cmdline = 0;
+ 
+ 	Genode::log("Booting L4Linux ...");
+ 
+-	register_reserved_areas();
+-	map_kip();
+-	prepare_l4re_env();
++	Genode::Heap heap { env.ram(), env.rm() };
++
++	init_genode_env(env, heap);
++
++	register_reserved_areas(env);
++	map_kip(env);
++	prepare_l4re_env(env);
+ 	parse_cmdline(&cmdline, &cmd_num);
+ 
+-	return linux_main(cmd_num, cmdline);
++	linux_main(cmd_num, cmdline);
+ }

@@ -20,6 +20,8 @@
 #include <dataspace.h>
 #include <env.h>
 
+#include "genode_env.h"
+
 namespace Fiasco {
 #include <l4/re/c/mem_alloc.h>
 }
@@ -32,18 +34,22 @@ extern "C" {
 	                   unsigned long flags)
 	{
 		using namespace L4lx;
+		Genode::Env &env = genode_env();
 
 		Dataspace *ds;
 		if (Genode::log2(size) >= Chunked_dataspace::CHUNK_SIZE_LOG2) {
-			ds = new (Genode::env()->heap())
-				Chunked_dataspace("lx_memory", size, mem);
+			ds = new (genode_alloc())
+			//ds = new (env.heap())
+				Chunked_dataspace(env, "lx_memory", size, mem);
 		} else {
 			Genode::Dataspace_capability cap =
-				Genode::env()->ram_session()->alloc(size);
-			ds = new (Genode::env()->heap())
+				env.ram().alloc(size);
+				//env.ram_session()->alloc(size);
+			ds = new (genode_alloc())
+			//ds = new (env.heap())
 				Single_dataspace("lx_memory", size, cap, mem);
 		}
-		Env::env()->dataspaces()->insert(ds);
+		L4lx::Env::env()->dataspaces()->insert(ds);
 		return 0;
 	}
 

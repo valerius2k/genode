@@ -17,6 +17,8 @@
 #include <base/stdint.h>
 #include <util/touch.h>
 
+#include "genode_env.h"
+
 #include <env.h>
 
 namespace Fiasco {
@@ -105,7 +107,8 @@ extern "C" {
 			return -1;
 		}
 
-		Genode::env()->rm_session()->detach(addr);
+		genode_env().rm().detach(addr);
+		//Genode::env()->rm_session()->detach(addr);
 		L4lx::Env::env()->rm()->free((void*)start);
 		return 0;
 	}

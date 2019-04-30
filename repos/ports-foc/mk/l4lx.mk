@@ -1,3 +1,4 @@
+L4_BUILD_DIR       := $(BUILD_BASE_DIR)/var/libcache/syscall-foc/build
 TARGET              = vmlinux
 VERBOSE_LX_MK      ?= 0
 REQUIRES           += foc

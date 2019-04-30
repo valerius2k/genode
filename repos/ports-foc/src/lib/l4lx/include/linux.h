@@ -14,7 +14,8 @@
 #ifndef _L4LX__LINUX_H_
 #define _L4LX__LINUX_H_
 
-#include <base/printf.h>
+#include <base/log.h>
+//#include <base/printf.h>
 #include <base/thread.h>
 
 #include <genode/linkage.h>
@@ -43,7 +44,8 @@ FASTCALL void     l4x_cpumask_copy(struct irq_data*, const struct cpumask*);
 	l4x_irq_restore(flags); \
 } while(0)
 
-#define NOT_IMPLEMENTED IRQ_SAFE(PWRN("%s: not implemented yet!", __func__););
+#define NOT_IMPLEMENTED IRQ_SAFE(Genode::warning("%s: not implemented yet!", __func__););
+//#define NOT_IMPLEMENTED IRQ_SAFE(PWRN("%s: not implemented yet!", __func__););
 
 #ifdef __cplusplus
 }

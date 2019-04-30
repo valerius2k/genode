@@ -23,6 +23,8 @@
 #include <platform_env.h>
 #include <foc/capability_space.h>
 
+#include "genode_env.h"
+
 namespace L4lx {
 
 	class Dataspace : public Genode::Avl_node<Dataspace>
@@ -100,21 +102,26 @@ namespace L4lx {
 		typedef Genode::size_t size_t;
 		typedef Genode::off_t  off_t;
 
-		Expanding_region_map(size_t size)
+		Expanding_region_map(Genode::Env &env, size_t size)
 		:
+			Genode::Rm_connection(env),
 			Genode::Region_map_client(Genode::Rm_connection::create(size))
+
 		{ }
 
 		Local_addr attach(Genode::Dataspace_capability ds, size_t size, off_t offset,
 		                  bool use_local_addr, Local_addr local_addr,
-		                  bool executable) override
+		                  bool executable,
+		                  bool writable) override
 		{
-			return retry<Genode::Region_map::Out_of_metadata>(
+			//return retry<Genode::Region_map::Out_of_metadata>(
+			return retry<Genode::Out_of_ram>(
 				[&] () {
 					return Genode::Region_map_client::attach(ds, size, offset,
 					                                         use_local_addr,
 					                                         local_addr,
-					                                         executable); },
+					                                         executable,
+					                                         writable); },
 				[&] () { Rm_connection::upgrade_ram(8*1024); });
 		}
 	};
@@ -128,6 +135,9 @@ namespace L4lx {
 
 			Genode::Ram_dataspace_capability *_chunks;
 
+			Genode::Env &_env;
+
+			Genode::Allocator &_alloc;
 	public:
 
 			enum {
@@ -135,13 +145,14 @@ namespace L4lx {
 				CHUNK_SIZE      = 1 << CHUNK_SIZE_LOG2,
 			};
 
-			Chunked_dataspace(const char*          name,
+			Chunked_dataspace(Genode::Env          &env,
+			                  const char*          name,
 			                  Genode::size_t       size,
 			                  Fiasco::l4_cap_idx_t ref)
-			: Dataspace(name, size, ref), _rm(size)
+			: Dataspace(name, size, ref), _rm(env, size), _env(env), _alloc(genode_alloc())
 			{
-				_chunks = (Genode::Ram_dataspace_capability*)
-					Genode::env()->heap()->alloc(sizeof(Genode::Ram_dataspace_capability) * (size/CHUNK_SIZE));
+				genode_alloc().alloc(sizeof(Genode::Ram_dataspace_capability) * (size/CHUNK_SIZE), 
+						(Genode::Ram_dataspace_capability **)&_chunks);
 			}
 
 			Genode::Dataspace_capability cap() { return _rm.dataspace(); }
@@ -152,16 +163,19 @@ namespace L4lx {
 				int i = off / CHUNK_SIZE;
 				if (_chunks[i].valid()) return;
 
-				Genode::size_t ram_avail = Genode::env()->ram_session()->avail();
+				Genode::size_t ram_avail = _env.pd().avail_ram().value;
+				//Genode::size_t ram_avail = genode_env()->ram_session()->avail();
 				if (greedy && ram_avail < 4*CHUNK_SIZE) {
 					char buf[128];
 					Genode::snprintf(buf, sizeof(buf), "ram_quota=%ld",
 					                 4*CHUNK_SIZE - ram_avail);
-					Genode::env()->parent()->resource_request(buf);
+					_env.parent().resource_request(buf);
+					//Genode::env()->parent()->resource_request(buf);
 				}
 
-				_chunks[i] = Genode::env()->ram_session()->alloc(CHUNK_SIZE);
-				_rm.attach(_chunks[i], 0, 0, true, off, false);
+				_alloc.alloc(CHUNK_SIZE, (Genode::Ram_dataspace_capability **)&_chunks[i]);
+				//_chunks[i] = Genode::env()->ram_session()->alloc(CHUNK_SIZE);
+				_rm.attach(_chunks[i], 0, 0, true, off, false, true);
 			}
 
 			bool free(Genode::size_t off)
@@ -169,7 +183,8 @@ namespace L4lx {
 				off = Genode::align_addr((off-(CHUNK_SIZE-1)), CHUNK_SIZE_LOG2);
 				int i = off / CHUNK_SIZE;
 				if (!_chunks[i].valid()) return false;
-				Genode::env()->ram_session()->free(_chunks[i]);
+				_env.ram().free(_chunks[i]);
+				//Genode::env()->ram_session()->free(_chunks[i]);
 				_chunks[i] = Genode::Ram_dataspace_capability();
 				return true;
 			}

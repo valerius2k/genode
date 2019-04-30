@@ -17,6 +17,8 @@
 #include <base/capability.h>
 #include <util/misc_math.h>
 
+#include "genode_env.h"
+
 /* L4lx includes */
 #include <env.h>
 
@@ -52,7 +54,8 @@ void* Region_manager::attach(Genode::Dataspace_capability cap, const char* name)
 
 void* Region_manager::attach(Dataspace *ds)
 {
-	void* addr = Genode::env()->rm_session()->attach(ds->cap());
+	void* addr = genode_env().rm().attach(ds->cap());
+	//void* addr = Genode::env()->rm_session()->attach(ds->cap());
 	alloc_addr(ds->size(), (Genode::addr_t)addr);
 	metadata(addr, Region((Genode::addr_t)addr, ds->size(), ds));
 	return addr;
@@ -75,15 +78,17 @@ bool Region_manager::attach_at(Dataspace *ds, Genode::size_t size,
 		}
 
 		/* We have to detach the dataspace placeholder */
-		Genode::env()->rm_session()->detach(addr);
+		genode_env().rm().detach(addr);
+		//Genode::env()->rm_session()->detach(addr);
 	} else
 		/* We have to reserve the area in our region map */
 		alloc_addr(ds->size(), (Genode::addr_t)addr);
 
 	/* Now call Genode's region map to really attach the dataspace */
 	try {
-		Genode::env()->rm_session()->attach(ds->cap(), size, offset,
-		                                    true, (Genode::addr_t) addr);
+		//Genode::env()->rm_session()->attach(ds->cap(), size, offset,
+		genode_env().rm().attach(ds->cap(), size, offset,
+		                         true, (Genode::addr_t) addr);
 	} catch(...) {
 		return false;
 	}
@@ -98,6 +103,8 @@ Region* Region_manager::reserve_range(Genode::size_t size, int align,
 	using namespace Genode;
 	void* addr = nullptr;
 	addr_t original_start = start;
+	Genode::Env &env = genode_env();
+	Genode::Allocator &alloc = genode_alloc();
 
 	while (true) {
 
@@ -109,14 +116,20 @@ Region* Region_manager::reserve_range(Genode::size_t size, int align,
 			 * We attach a managed-dataspace as a placeholder to
 			 * Genode's region-map
 			 */
-			rmc = new (env()->heap()) Rm_connection;
-			rm  = new (env()->heap()) Region_map_client(rmc->create(size));
+			rmc = new (alloc) Rm_connection(env);
+			//rmc = new (env()->heap()) Rm_connection;
+			rm  = new (alloc) Region_map_client(rmc->create(size));
+			//rm  = new (env()->heap()) Region_map_client(rmc->create(size));
 
-			addr = start ? env()->rm_session()->attach_at(rm->dataspace(), start)
-			             : env()->rm_session()->attach(rm->dataspace());
+			addr = start ? env.rm().attach_at(rm->dataspace(), start)
+			             : env.rm().attach(rm->dataspace());
+			//addr = start ? env()->rm_session()->attach_at(rm->dataspace(), start)
+			//             : env()->rm_session()->attach(rm->dataspace());
 			break;
-		} catch(Rm_session::Attach_failed e) {
-			destroy(env()->heap(), rm);
+		//} catch(Rm_session::Attach_failed e) {
+		} catch(Region_map::Region_conflict e) {
+			destroy(alloc, rm);
+			//destroy(env()->heap(), rm);
 			 /* attach with pre-defined address failed, so search one */
 			if (start) {
 				/* the original start address might have a different alignment */
@@ -159,7 +172,8 @@ void Region_manager::reserve_range(Genode::addr_t addr, Genode::size_t size,
                                    const char *name)
 {
 	Genode::Dataspace_capability cap;
-	L4lx::Dataspace *ds = new (Genode::env()->heap())
+	//L4lx::Dataspace *ds = new (Genode::env()->heap())
+	L4lx::Dataspace *ds = new (genode_alloc())
 		L4lx::Single_dataspace(name, size, cap);
 	L4lx::Env::env()->dataspaces()->insert(ds);
 	alloc_addr(size, (Genode::addr_t)addr);
@@ -199,11 +213,13 @@ void Region_manager::add_mapping(void *phys, void *virt, bool rw)
 {
 	Mapping *m = _virt_to_phys(virt);
 	if (!m) {
-		m = new (Genode::env()->heap()) Mapping(virt, phys, rw);
+		//m = new (Genode::env()->heap()) Mapping(virt, phys, rw);
+		m = new (genode_alloc()) Mapping(virt, phys, rw);
 		_virt_tree.insert(m);
 		Phys_mapping *p = _phys_to_virt(phys);
 		if (!p) {
-			p = new (Genode::env()->heap()) Phys_mapping(phys);
+			//p = new (Genode::env()->heap()) Phys_mapping(phys);
+			p = new (genode_alloc()) Phys_mapping(phys);
 			_phys_tree.insert(p);
 		}
 		p->mappings()->insert(m);
@@ -228,10 +244,12 @@ void Region_manager::remove_mapping(void *virt)
 			p->mappings()->remove(m);
 			if (!p->mappings()->first()) {
 				_phys_tree.remove(p);
-				Genode::destroy(Genode::env()->heap(), p);
+				//Genode::destroy(Genode::env()->heap(), p);
+				Genode::destroy(genode_alloc(), p);
 			}
 		}
-		Genode::destroy(Genode::env()->heap(), m);
+		//Genode::destroy(Genode::env()->heap(), m);
+		Genode::destroy(genode_alloc(), m);
 	}
 }
 

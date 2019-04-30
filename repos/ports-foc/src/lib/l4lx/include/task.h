@@ -33,7 +33,8 @@ namespace L4lx {
 		private:
 
 			Fiasco::l4_cap_idx_t         _ref;
-			Genode::Pd_connection        _pd;
+			Genode::Env                  &_env;
+			Genode::Pd_connection        _pd { _env };
 			Genode::Foc_native_pd_client _native_pd { _pd.native_pd() };
 			Genode::Native_capability    _cap;
 
@@ -43,9 +44,9 @@ namespace L4lx {
 			 ** Constructor **
 			 *****************/
 
-			Task(Fiasco::l4_cap_idx_t ref)
+			Task(Fiasco::l4_cap_idx_t ref, Genode::Env &env)
 			:
-				_ref(ref), _cap(_native_pd.task_cap())
+				_ref(ref), _env(env), _cap(_native_pd.task_cap())
 			{
 				using namespace Fiasco;
 

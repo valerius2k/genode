@@ -11,7 +11,7 @@
  * under the terms of the GNU General Public License version 2.
  */
 
-#include <base/printf.h>
+//#include <base/printf.h>
 #include <vcpu.h>
 
 namespace Fiasco {
@@ -28,7 +28,9 @@ extern "C" {
 		if (vcpu)
 			vcpu->timer()->msleep(ms);
 		else {
-			static Timer::Connection timer;
+			Genode::Env &env = genode_env();
+			static Timer::Connection timer { env };
+			//static Timer::Connection timer;
 			timer.msleep(ms);
 		}
 	}

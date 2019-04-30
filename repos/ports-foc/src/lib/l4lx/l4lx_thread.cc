@@ -16,6 +16,8 @@
 #include <cpu_session/connection.h>
 #include <foc/native_capability.h>
 
+#include "genode_env.h"
+
 #include <env.h>
 #include <vcpu.h>
 #include <l4lx_thread.h>
@@ -50,7 +52,8 @@ static l4_addr_t utcb_base_addr()
 
 Genode::Cpu_session* L4lx::cpu_connection()
 {
-	return Genode::env()->cpu_session();
+	return &genode_env().cpu();
+	//return Genode::env()->cpu_session();
 }
 
 
@@ -132,10 +135,11 @@ l4lx_thread_t l4lx_thread_create(L4_CV void (*thread_func)(void *data),
 		*vcpu_state = (l4_vcpu_state_t *) addr;
 	}
 
-	Vcpu *vc = new (Genode::env()->heap()) Vcpu(name, thread_func,
-	                                            (unsigned long*)stack_data, 1024 * 64,
-	                                            (Genode::addr_t)addr,
-	                                            l4x_cpu_physmap_get_id(cpu_nr));
+	//Vcpu *vc = new (Genode::env()->heap()) Vcpu(name, thread_func,
+	Vcpu *vc = new (genode_alloc()) Vcpu(genode_env(), name, thread_func,
+	                                     (unsigned long*)stack_data, 1024 * 64,
+	                                     (Genode::addr_t)addr,
+	                                     l4x_cpu_physmap_get_id(cpu_nr));
 
 	vcpus[thread_id(vc->utcb())] = vc;
 

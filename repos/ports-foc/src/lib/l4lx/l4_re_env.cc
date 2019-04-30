@@ -16,6 +16,8 @@
 #include <rom_session/connection.h>
 #include <dataspace/client.h>
 
+#include "genode_env.h"
+
 #include <env.h>
 
 namespace Fiasco {
@@ -39,20 +41,28 @@ extern "C" {
 		using namespace L4lx;
 
 		try {
-			Genode::Rom_connection rom(name);
+			Genode::Env &env = genode_env();
+			Genode::Rom_connection rom(env, name);
 			Genode::size_t size = Genode::Dataspace_client(rom.dataspace()).size();
-			Genode::Dataspace_capability cap = Genode::env()->ram_session()->alloc(size);
+			Genode::Dataspace_capability cap = env.ram().alloc(size);
+			//Genode::Dataspace_capability cap = Genode::env()->ram_session()->alloc(size);
 
-			void *dst = Genode::env()->rm_session()->attach(cap);
-			void *src = Genode::env()->rm_session()->attach(rom.dataspace());
+			void *dst = env.rm().attach(cap);
+			//void *dst = Genode::env()->rm_session()->attach(cap);
+			void *src = env.rm().attach(rom.dataspace());
+			//void *src = Genode::env()->rm_session()->attach(rom.dataspace());
 
 			Genode::memcpy(dst, src, size);
-			Genode::env()->rm_session()->detach(src);
-			Genode::env()->rm_session()->detach(dst);
+			env.rm().detach(src);
+			//Genode::env()->rm_session()->detach(src);
+			env.rm().detach(dst);
+			//Genode::env()->rm_session()->detach(dst);
 
-			l4re_env_cap_entry_t *entry = new (Genode::env()->heap())
+			l4re_env_cap_entry_t *entry = new (genode_alloc())
+			//l4re_env_cap_entry_t *entry = new (Genode::env()->heap())
 				l4re_env_cap_entry_t();
-			Dataspace *ds = new (Genode::env()->heap())
+			Dataspace *ds = new (genode_alloc())
+			//Dataspace *ds = new (Genode::env()->heap())
 				Single_dataspace("initrd", size, cap);
 			Env::env()->dataspaces()->insert(ds);
 			entry->cap = ds->ref();

@@ -244,7 +244,8 @@ int l4lx_irq_timer_set_affinity(struct irq_data *data, const struct cpumask *des
 int l4x_alloc_irq_desc_data(int irq)
 {
 	struct l4x_irq_desc_private *p;
-	Genode::env()->heap()->alloc(sizeof(struct l4x_irq_desc_private), (void**)&p);
+	genode_alloc().alloc(sizeof(struct l4x_irq_desc_private), (void**)&p);
+	//Genode::env()->heap()->alloc(sizeof(struct l4x_irq_desc_private), (void**)&p);
 	if (!p) {
 		Genode::warning("could not allocate irq descriptor memory!");
 		return -12; //ENOMEM;

@@ -23,6 +23,8 @@
 #include <timer_session/connection.h>
 #include <foc/capability_space.h>
 
+#include "genode_env.h"
+
 #include <vcpu.h>
 #include <linux.h>
 
@@ -83,8 +85,10 @@ static Nic::Connection *nic() {
 
 	try {
 		Linux::Irq_guard guard;
-		static Nic::Packet_allocator tx_block_alloc(Genode::env()->heap());
-		static Nic::Connection nic(&tx_block_alloc, BUF_SIZE, BUF_SIZE);
+		static Nic::Packet_allocator tx_block_alloc(&genode_alloc());
+		//static Nic::Packet_allocator tx_block_alloc(Genode::env()->heap());
+		static Nic::Connection nic(genode_env(), &tx_block_alloc, BUF_SIZE, BUF_SIZE);
+		//static Nic::Connection nic(&tx_block_alloc, BUF_SIZE, BUF_SIZE);
 		n = &nic;
 	} catch(...) { }
 	initialized = true;

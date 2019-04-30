@@ -13,17 +13,22 @@
 
 /* Genode includes */
 #include <base/env.h>
+#include <base/heap.h>
 #include <base/thread.h>
+#include <base/attached_rom_dataspace.h>
+#include <libc/component.h>
 #include <dataspace/client.h>
 #include <rom_session/connection.h>
 #include <cpu_session/connection.h>
 #include <util/misc_math.h>
-#include <os/config.h>
+//#include <os/config.h>
 #include <foc_native_cpu/client.h>
 #include <foc/native_capability.h>
 
 /* L4lx includes */
 #include <env.h>
+
+#include "genode_env.h"
 
 namespace Fiasco {
 #include <l4/re/env.h>
@@ -49,7 +54,10 @@ static void parse_cmdline(char*** cmd, int *num)
 	static char* words[MAX_ARGS];
 
 	try {
-		config()->xml_node().attribute("args").value(arg_str, sizeof(arg_str));
+		Env &env = genode_env();
+		Attached_rom_dataspace cfg { env, "config" };
+		cfg.xml().attribute("args").value(arg_str, sizeof(arg_str));
+		//config()->xml_node().attribute("args").value(arg_str, sizeof(arg_str));
 	} catch(...) {
 		warning("couldn't parse commandline from config!");
 		arg_str[0] = 0;
@@ -78,12 +86,13 @@ static void parse_cmdline(char*** cmd, int *num)
 }
 
 
-static void map_kip()
+static void map_kip(Libc::Env &env)
 {
 	using namespace Genode;
 
 	/* Open the KIP special file and keep it open */
-	static Genode::Rom_connection kip_rom("l4v2_kip");
+	static Genode::Rom_connection kip_rom(env, "l4v2_kip");
+	//static Genode::Rom_connection kip_rom("l4v2_kip");
 
 	/* Attach and register dataspace */
 	l4lx_kinfo = L4lx::Env::env()->rm()->attach(kip_rom.dataspace(), "KIP");
@@ -93,11 +102,11 @@ static void map_kip()
 }
 
 
-static void prepare_l4re_env()
+static void prepare_l4re_env(Libc::Env &genode_env)
 {
 	using namespace Fiasco;
 
-	Genode::Cpu_session &cpu = *Genode::env()->cpu_session();
+	Genode::Cpu_session &cpu = genode_env.cpu();
 
 	Genode::Foc_native_cpu_client native_cpu(cpu.native_cpu());
 
@@ -119,7 +128,7 @@ static void prepare_l4re_env()
 }
 
 
-static void register_reserved_areas()
+static void register_reserved_areas(Libc::Env &env)
 {
 	using namespace Genode;
 
@@ -131,17 +140,21 @@ static void register_reserved_areas()
 }
 
 
-int main(int, char**)
+void Libc::Component::construct(Libc::Env &env)
 {
 	int    cmd_num = 0;
 	char** cmdline = 0;
 
 	Genode::log("Booting L4Linux ...");
 
-	register_reserved_areas();
-	map_kip();
-	prepare_l4re_env();
+	Genode::Heap heap { env.ram(), env.rm() };
+
+	init_genode_env(env, heap);
+
+	register_reserved_areas(env);
+	map_kip(env);
+	prepare_l4re_env(env);
 	parse_cmdline(&cmdline, &cmd_num);
 
-	return linux_main(cmd_num, cmdline);
+	linux_main(cmd_num, cmdline);
 }

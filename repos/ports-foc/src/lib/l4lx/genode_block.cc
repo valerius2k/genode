@@ -14,9 +14,13 @@
 #include <base/env.h>
 #include <base/log.h>
 #include <base/allocator_avl.h>
+#include <util/xml_node.h>
+#include <base/attached_rom_dataspace.h>
 #include <block_session/connection.h>
-#include <os/config.h>
+//#include <os/config.h>
 #include <foc/capability_space.h>
+
+#include "genode_env.h"
 
 #include <vcpu.h>
 #include <linux.h>
@@ -65,7 +69,7 @@ namespace {
 				int idx = _find(0);
 				if (idx == 0) {
 					Genode::error("Req cache full!");
-					enter_kdebug("Req_cache");
+					Fiasco::enter_kdebug("Req_cache");
 				}
 
 				_cache[idx] = Req_entry(packet, request);
@@ -76,7 +80,7 @@ namespace {
 				int idx = _find(packet);
 				if (idx == 0) {
 					Genode::error("Req cache entry not found!");
-					enter_kdebug("Req_cache");
+					Fiasco::enter_kdebug("Req_cache");
 				}
 
 				*request = _cache[idx].req;
@@ -115,8 +119,10 @@ namespace {
 		public:
 
 			Block_device(const char *label)
-			: _alloc(Genode::env()->heap()),
-			  _session(&_alloc, TX_BUF_SIZE, label),
+			: _alloc(&genode_alloc()),
+			//: _alloc(Genode::env()->heap()),
+			  _session(genode_env(), &_alloc, TX_BUF_SIZE, label),
+			//  _session(&_alloc, TX_BUF_SIZE, label),
 			  _irq_cap(_alloc_irq())
 			{
 				_session.info(&_blk_cnt, &_blk_size, &_blk_ops);
@@ -213,7 +219,10 @@ extern "C" {
 		static unsigned count = 0;
 		if (count == 0) {
 			try {
-				Xml_node config = Genode::config()->xml_node();
+				Genode::Env &env = genode_env();
+				Genode::Attached_rom_dataspace cfg { env, "config" };
+				Xml_node config = cfg.xml();
+				//Xml_node config = Genode::config()->xml_node();
 				size_t sn_cnt   = config.num_sub_nodes();
 				for (unsigned i = 0; i < sn_cnt; i++)
 					if (config.sub_node(i).has_type("block"))
@@ -223,14 +232,16 @@ extern "C" {
 					return count;
 
 				devices = (Block_device**)
-					env()->heap()->alloc(count * sizeof(Block_device*));
+					genode_alloc().alloc(count * sizeof(Block_device*));
+					//env()->heap()->alloc(count * sizeof(Block_device*));
 
 				char label[64];
 				for (unsigned i = 0, j = 0; i < sn_cnt; i++) {
 					if (config.sub_node(i).has_type("block")) {
 						config.sub_node(i).attribute("label").value(label,
 						                                            sizeof(label));
-						devices[j] = new (env()->heap()) Block_device(label);
+						devices[j] = new (genode_alloc()) Block_device(label);
+						//devices[j] = new (env()->heap()) Block_device(label);
 						j++;
 					}
 				}

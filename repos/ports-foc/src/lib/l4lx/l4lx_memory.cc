@@ -12,7 +12,7 @@
  */
 
 /* Genode includes */
-#include <base/printf.h>
+//#include <base/printf.h>
 
 #include <l4lx_memory.h>
 #include <env.h>

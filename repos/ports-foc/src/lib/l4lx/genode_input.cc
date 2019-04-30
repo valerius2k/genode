@@ -17,6 +17,8 @@
 #include <input/event.h>
 #include <input/keycodes.h>
 
+#include "genode_env.h"
+
 #include <linux.h>
 #include <env.h>
 
@@ -26,7 +28,8 @@ enum Absolute_axes {ABS_X=0x00, ABS_Y=0x01, ABS_WHEEL=0x08 };
 
 
 static Input::Connection *input() {
-	static Input::Connection _inp;
+	static Input::Connection _inp { genode_env() };
+	//static Input::Connection _inp;
 	return &_inp;
 }
 
@@ -92,7 +95,42 @@ extern "C" {
 	{
 		using namespace Input;
 
-		switch(ev->type()) {
+		ev->handle_absolute_motion([&] (int x, int y) {
+			genode_input_event(mouse, EV_ABS, ABS_X, x);
+			genode_input_event(mouse, EV_ABS, ABS_Y, y);
+		});
+
+		ev->handle_relative_motion([&] (int x, int y) {
+			genode_input_event(mouse, EV_REL, REL_X, x);
+			genode_input_event(mouse, EV_REL, REL_Y, y);
+			return;
+		});
+
+		ev->handle_press([&] (Input::Keycode key, Genode::Codepoint) {
+			if (key < BTN_MISC)
+				genode_input_event(keyb, EV_KEY, key, 1);
+			else
+				genode_input_event(mouse, EV_KEY, key, 1);
+			return;
+		});
+
+		ev->handle_release([&] (Input::Keycode key) {
+			if (key < BTN_MISC)
+				genode_input_event(keyb, EV_KEY, key, 0);
+			else
+				genode_input_event(mouse, EV_KEY, key, 0);
+			return;
+		});
+
+		ev->handle_wheel([&] (int x, int y) {
+			if (x)
+				genode_input_event(mouse, EV_REL, REL_WHEEL, x);
+			else
+				genode_input_event(mouse, EV_ABS, ABS_WHEEL, x);
+			return;
+		});
+
+		/* switch(ev->type()) {
 		case Event::MOTION:
 			{
 				if(ev->rx())
@@ -132,7 +170,7 @@ extern "C" {
 		case Event::INVALID:
 		default:
 			;
-		}
+		} */
 	}
 
 

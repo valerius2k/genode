@@ -1,4 +1,4 @@
-/*
+    /*
  * \brief  L4Re functions needed by L4Linux.
  * \author Stefan Kalkowski
  * \date   2011-04-17
@@ -12,7 +12,8 @@
  */
 
 /* Genode includes */
-#include <base/printf.h>
+#include <base/log.h>
+//#include <base/printf.h>
 
 namespace Fiasco {
 #include <l4/re/c/debug.h>
@@ -24,7 +25,8 @@ extern "C" {
 
 	void l4re_debug_obj_debug(l4_cap_idx_t srv, unsigned long function)
 	{
-		PWRN("%s: Not implemented yet!",__func__);
+		Genode::warning("%s: Not implemented yet!",__func__);
+		//PWRN("%s: Not implemented yet!",__func__);
 	}
 
 }

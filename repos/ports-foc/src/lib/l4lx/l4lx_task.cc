@@ -12,7 +12,7 @@
  */
 
 /* Genode includes */
-#include <base/printf.h>
+//#include <base/printf.h>
 #include <foc/capability_space.h>
 
 #include <env.h>
@@ -110,7 +110,8 @@ int l4lx_task_create(l4_cap_idx_t task_no)
 
 	Linux::Irq_guard guard;
 
-	Env::env()->tasks()->insert(new (Genode::env()->heap()) Task(task_no));
+	Env::env()->tasks()->insert(new (genode_alloc()) Task(task_no, genode_env()));
+	//Env::env()->tasks()->insert(new (Genode::env()->heap()) Task(task_no));
 	return 0;
 }
 
@@ -166,7 +167,8 @@ int l4lx_task_delete_task(l4_cap_idx_t task, unsigned option)
 
 	Task *entry = Env::env()->tasks()->find_by_ref(task);
 	Env::env()->tasks()->remove(entry);
-	destroy(Genode::env()->heap(), entry);
+	destroy(genode_alloc(), entry);
+	//destroy(Genode::env()->heap(), entry);
 	return 0;
 }
 

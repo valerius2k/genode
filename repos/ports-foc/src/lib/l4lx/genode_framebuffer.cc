@@ -12,7 +12,7 @@
  */
 
 /* Genode includes */
-#include <base/printf.h>
+//#include <base/printf.h>
 #include <base/env.h>
 #include <framebuffer_session/connection.h>
 
@@ -21,6 +21,8 @@
 #include <linux.h>
 #include <genode/framebuffer.h>
 
+#include "genode_env.h"
+
 
 static Framebuffer::Connection *framebuffer() {
 	static bool initialized = false;
@@ -28,7 +30,7 @@ static Framebuffer::Connection *framebuffer() {
 
 	if (!initialized) {
 		try {
-			static Framebuffer::Connection fb;
+			static Framebuffer::Connection fb { genode_env(), Framebuffer::Mode() };
 			f = &fb;
 		} catch(...) {}
 		initialized = true;

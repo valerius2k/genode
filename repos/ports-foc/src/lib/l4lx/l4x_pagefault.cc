@@ -1,8 +1,12 @@
+#include <base/log.h>
+
 #include <env.h>
 #include <rm.h>
 
 #include <vcpu.h>
 #include <linux.h>
+
+#include "genode_env.h"
 
 namespace Fiasco {
 #include <genode/net.h>
@@ -33,17 +37,20 @@ namespace {
 				Signal_receiver           receiver;
 				Signal_context            rx;
 				Signal_context_capability cap(receiver.manage(&rx));
-				Genode::env()->parent()->yield_sigh(cap);
+				genode_env().parent().yield_sigh(cap);
+				//Genode::env()->parent()->yield_sigh(cap);
 				_sync->unlock();
 
 				while (true) {
 					receiver.wait_for_signal();
-					Genode::env()->parent()->yield_request();
+					genode_env().parent().yield_request();
+					//Genode::env()->parent()->yield_request();
 					{
 						Genode::Lock::Guard guard(balloon_lock);
 						ballooning = true;
 						if (l4_error(l4_irq_trigger(_cap)) != -1)
-							PWRN("IRQ net trigger failed\n");
+							Genode::warning("IRQ net trigger failed\n");
+							//PWRN("IRQ net trigger failed\n");
 					}
 				}
 			}
@@ -73,8 +80,10 @@ L4_CV int l4x_forward_pf(Fiasco::l4_umword_t addr,
 		try {
 			ds->map(addr - r->addr(), !ballooning);
 			break;
-		} catch(Genode::Rm_session::Attach_failed) {
-			PWRN("Attach of chunk dataspace of failed");
+		//} catch(Genode::Rm_session::Attach_failed) {
+		} catch(Genode::Region_map::Region_conflict) {
+			Genode::warning("Attach of chunk dataspace of failed");
+			//PWRN("Attach of chunk dataspace of failed");
 			return 0;
 		}
 	}
@@ -118,7 +127,8 @@ void genode_balloon_free_done()
 	Linux::Irq_guard ig;
 	Genode::Lock::Guard guard(balloon_lock);
 	ballooning = false;
-	Genode::env()->parent()->yield_response();
+	genode_env().parent().yield_response();
+	//Genode::env()->parent()->yield_response();
 }
 
 }

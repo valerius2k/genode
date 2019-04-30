@@ -1,6 +1,10 @@
 #
 # L4Linux support library
 #
+
+L4_BUILD_DIR := $(BUILD_BASE_DIR)/var/libcache/syscall-foc/build
+CC_CXX_WARN_STRICT =
+
 SRC_CC  += env.cc \
            dataspace.cc \
            genode_block.cc \
@@ -32,10 +36,14 @@ SRC_CC  += env.cc \
 
 INC_DIR += $(REP_DIR)/include \
            $(REP_DIR)/src/lib/l4lx/include \
+           $(L4_BUILD_DIR)/include/x86 \
+           $(L4_BUILD_DIR)/include/x86/l4f \
+           $(L4_BUILD_DIR)/include/x86/l4 \
+           $(L4_BUILD_DIR)/include
 
 # for reusing the 'Expanding_rm_session' from the platform env in dataspace.h
 INC_DIR += $(BASE_DIR)/src/include
 
-LIBS     = base config
+LIBS     = base # config
 
 vpath %.cc $(REP_DIR)/src/lib/l4lx

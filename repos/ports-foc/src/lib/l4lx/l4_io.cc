@@ -18,6 +18,8 @@
 
 #include <env.h>
 
+#include "genode_env.h"
+
 namespace Fiasco {
 #include <l4/io/io.h>
 }
@@ -63,13 +65,15 @@ extern "C" {
 	{
 		using namespace Genode;
 
-		Io_mem_connection *iomem = new (env()->heap()) Io_mem_connection(phys, size);
+		Io_mem_connection *iomem = new (genode_alloc()) Io_mem_connection(genode_env(), phys, size);
+		//Io_mem_connection *iomem = new (env()->heap()) Io_mem_connection(phys, size);
 		L4lx::Dataspace *ds =
 			L4lx::Env::env()->dataspaces()->insert("iomem", iomem->dataspace());
 		if (!L4lx::Env::env()->rm()->attach_at(ds, size, 0, (void*)virt)) {
 			error("could not reserve IO mem region at ", Hex(virt));
 			L4lx::Env::env()->dataspaces()->remove(ds);
-			destroy(env()->heap(), iomem);
+			destroy(genode_alloc(), iomem);
+			//destroy(env()->heap(), iomem);
 			return 1;
 		}
 		return 0;
