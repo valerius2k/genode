@@ -1,0 +1,20 @@
+<runtime ram="4M" caps="150" binary="fatfs_fs">
+
+	<requires>
+		<block/>
+	</requires>
+
+	<provides>
+		<file_system/>
+	</provides>
+
+	<content>
+		<rom label="ld.lib.so"/>
+		<rom label="fatfs_fs"/>
+	</content>
+
+	<config>
+		<policy root="/" writable="yes"/>
+	</config>
+
+</runtime>
