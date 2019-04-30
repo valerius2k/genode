@@ -23,6 +23,7 @@ SRC_CC      += stack_area.cc \
                pager_object.cc \
                pd_session_support.cc \
                native_cpu_component.cc \
+               native_pd_component.cc \
                rpc_cap_factory.cc \
                platform.cc \
                platform_rom_modules.cc \

@@ -38,8 +38,10 @@ class Genode::Native_cpu_component : public Rpc_object<Foc_native_cpu,
 		Native_cpu_component(Cpu_session_component &, char const *);
 		~Native_cpu_component();
 
+		void enable_vcpu(Thread_capability, addr_t) override;
 		Native_capability native_cap(Thread_capability) override;
 		Foc_thread_state thread_state(Thread_capability) override;
+		Native_capability alloc_irq() override;
 };
 
 #endif /* _CORE__INCLUDE__NATIVE_CPU_COMPONENT_H_ */
