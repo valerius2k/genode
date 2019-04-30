@@ -1,0 +1,179 @@
+<runtime ram="100M" caps="12000" binary="init">
+
+	<requires>
+		<nitpicker/>
+		<timer/>
+		<report/>
+	</requires>
+
+	<content>
+		<rom label="ld.lib.so"/>
+		<rom label="liquid_fb"/>
+		<rom label="launchpad"/>
+		<rom label="scout"/>
+		<rom label="testnit"/>
+		<rom label="nitlog"/>
+		<rom label="launchpad.config"/>
+		<rom label="global_keys_handler"/>
+		<rom label="rom_filter"/>
+		<rom label="report_rom"/>
+		<rom label="nit_focus"/>
+		<rom label="pointer"/>
+		<rom label="nitpicker"/>
+	</content>
+
+<config>
+	<parent-provides>
+		<service name="ROM"/>
+		<service name="CPU"/>
+		<service name="LOG"/>
+		<service name="PD"/>
+		<service name="Nitpicker"/>
+		<service name="Timer"/>
+	</parent-provides>
+	<default-route>
+		<any-service> <parent/> <any-child/> </any-service>
+	</default-route>
+	<default caps="100"/>
+
+	<start name="report_rom">
+		<resource name="RAM" quantum="1M"/>
+		<provides> <service name="Report"/> <service name="ROM"/> </provides>
+		<config verbose="no">
+			<policy label="status_bar -> focus"          report="nitpicker -> focus"/>
+			<policy label="nitpicker_config -> xray"     report="global_keys_handler -> xray"/>
+			<policy label="global_keys_handler -> hover" report="nitpicker -> hover"/>
+			<policy label="nit_focus -> clicked"         report="nitpicker -> clicked"/>
+			<policy label="nitpicker -> focus"           report="nit_focus -> focus"/>
+		</config>
+	</start>
+
+	<start name="nitpicker_config">
+		<binary name="rom_filter"/>
+		<resource name="RAM" quantum="1096K"/>
+		<provides><service name="ROM"/></provides>
+		<config>
+			<input name="xray_enabled" rom="xray" node="xray">
+				<attribute name="enabled" /> </input>
+
+			<output node="config">
+				<attribute name="focus" value="rom"/>
+				<inline>
+					<report focus="yes" xray="yes" hover="yes" keystate="yes"
+					        clicked="yes"/>
+					<domain name="pointer" layer="1" origin="pointer"
+					        content="client" label="no"/>
+					<domain name="panel" layer="2"
+					        content="client" label="no" hover="always"/>
+				</inline>
+				<if>
+					<has_value input="xray_enabled" value="no" />
+					<then>
+						<inline>
+							<domain name="launchpad" layer="3"
+							        content="client" label="no" hover="always" focus="click"
+							        ypos="18" height="-18" />
+							<domain name="" layer="3"
+							        content="client" label="no" hover="always" focus="click"
+							        ypos="18" height="-18" />
+						</inline>
+					</then>
+					<else>
+						<inline>
+							<domain name="launchpad" layer="3" color="#dd0000"
+							        content="tinted" label="yes" hover="focused" focus="click"
+							        ypos="18" height="-18" />
+							<domain name="" layer="3" color="#55dd34"
+							        content="tinted" label="yes" hover="focused" focus="click"
+							        ypos="18" height="-18" />
+						</inline>
+					</else>
+				</if>
+				<inline>
+					<policy label_prefix="pointer"            domain="pointer"/>
+					<policy label_prefix="status_bar"         domain="panel"/>
+					<policy label_prefix="scout -> launchpad" domain="launchpad"/>
+					<default-policy                           domain=""/>
+
+					<global-key name="KEY_SCROLLLOCK" label="global_keys_handler -> input" />
+					<global-key name="KEY_F1"         label="global_keys_handler -> input" />
+					<global-key name="KEY_F2"         label="global_keys_handler -> input" />
+				</inline>
+			</output>
+		</config>
+		<route>
+			<service name="ROM" label="xray"> <child name="report_rom"/> </service>
+			<any-service> <parent/> </any-service>
+		</route>
+	</start>
+
+	<start name="global_keys_handler">
+		<resource name="RAM" quantum="1096K"/>
+		<config>
+			<bool name="xray" initial="no"/>
+
+			<press   name="KEY_SCROLLLOCK" bool="xray" change="toggle"/>
+			<press   name="KEY_F1"         bool="xray" change="on"/>
+			<release name="KEY_F1"         bool="xray" change="off"/>
+			<press   name="KEY_F2"         bool="xray" change="toggle"/>
+
+			<report name="xray" delay_ms="125">
+				<hovered domain="panel"/>
+				<bool name="xray"/>
+			</report>
+		</config>
+		<route>
+			<service name="Report"> <child name="report_rom"/> </service>
+			<service name="ROM" label="hover"> <child name="report_rom"/> </service>
+			<any-service> <parent/> <any-child/> </any-service>
+		</route>
+	</start>
+
+	<!-- <start name="nitpicker" caps="110">
+		<resource name="RAM" quantum="1216K"/>
+		<provides><service name="Nitpicker"/></provides>
+		<configfile name="nitpicker.config"/>
+		<route>
+			<service name="Framebuffer">
+				<child name="nit_fb"/> </service>
+			<service name="Input">
+				<child name="nit_fb"/> </service>
+			<service name="ROM" label="nitpicker.config">
+				<child name="nitpicker_config"/> </service>
+			<service name="ROM" label="focus">
+				<child name="report_rom"/> </service>
+			<service name="Report">
+				<child name="report_rom"/> </service>
+			<any-service> <parent/> <any-child/> </any-service>
+		</route>
+	</start> -->
+
+	<start name="pointer">
+		<resource name="RAM" quantum="1096K"/>
+		<config/>
+	</start>
+
+	<start name="nit_focus">
+		<resource name="RAM" quantum="1M"/>
+		<config> <default-policy focus="yes"/> </config>
+		<route>
+			<service name="ROM" label="clicked"> <child name="report_rom"/> </service>
+			<service name="Report"> <child name="report_rom"/> </service>
+			<any-service> <parent/> </any-service>
+		</route>
+	</start>
+
+	<!-- <start name="status_bar">
+		<resource name="RAM" quantum="1096K"/>
+		<route>
+			<service name="ROM" label="focus"> <child name="report_rom"/> </service>
+			<any-service> <parent/> <any-child/> </any-service>
+		</route>
+	</start> -->
+
+	<start name="scout" caps="10000">
+		<resource name="RAM" quantum="64M"/>
+	</start>
+</config>
+
+</runtime>
